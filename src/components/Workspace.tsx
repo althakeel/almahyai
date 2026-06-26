@@ -17,22 +17,17 @@ export default function Workspace({ user, onLogout }: Props) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [provider, setProvider] = useState<'openai' | 'gemini'>('gemini');
   const [model, setModel] = useState('gemini-2.5-flash');
-  const [models, setModels] = useState<{ openai: string[]; gemini: string[] }>({ openai: [], gemini: [] });
   const [loading, setLoading] = useState(true);
   const [creatingChat, setCreatingChat] = useState(false);
   const [error, setError] = useState('');
   const bootstrapped = useRef(false);
 
   useEffect(() => {
-    if (user.isAdmin) {
-      almahyApi.models.list().then(setModels).catch(() => {});
-    } else {
-      almahyApi.config.chat().then((cfg) => {
-        setProvider(cfg.provider);
-        setModel(cfg.model);
-      }).catch(() => {});
-    }
-  }, [user.isAdmin]);
+    almahyApi.config.chat().then((cfg) => {
+      setProvider(cfg.provider);
+      setModel(cfg.model);
+    }).catch(() => {});
+  }, []);
 
   const ensureWorkspace = useCallback(async (): Promise<WorkspaceType> => {
     if (activeWorkspace) return activeWorkspace;
@@ -140,11 +135,6 @@ export default function Workspace({ user, onLogout }: Props) {
     }
   };
 
-  const handleProviderChange = (p: 'openai' | 'gemini') => {
-    setProvider(p);
-    setModel(p === 'openai' ? 'gpt-4o-mini' : 'gemini-2.5-flash');
-  };
-
   return (
     <div className="workspace">
       <aside className={`sidebar ${sidebarOpen ? 'open' : 'collapsed'}`}>
@@ -214,39 +204,7 @@ export default function Workspace({ user, onLogout }: Props) {
             ☰
           </button>
 
-          {view === 'chat' && (
-            user.isAdmin ? (
-            <div className="model-bar">
-              <div className="provider-toggle">
-                <button
-                  type="button"
-                  className={provider === 'openai' ? 'active-openai' : ''}
-                  onClick={() => handleProviderChange('openai')}
-                >
-                  OpenAI
-                </button>
-                <button
-                  type="button"
-                  className={provider === 'gemini' ? 'active-gemini' : ''}
-                  onClick={() => handleProviderChange('gemini')}
-                >
-                  Gemini
-                </button>
-              </div>
-              <select
-                value={model}
-                onChange={(e) => setModel(e.target.value)}
-                className="model-select"
-              >
-                {(provider === 'openai' ? models.openai : models.gemini).map((m) => (
-                  <option key={m} value={m}>{m}</option>
-                ))}
-              </select>
-            </div>
-            ) : (
-            <div className="brand-title">Almahy AI</div>
-            )
-          )}
+          {view === 'chat' && <div className="brand-title">Almahy AI</div>}
         </header>
 
         {error && (

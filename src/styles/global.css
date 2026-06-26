@@ -516,6 +516,71 @@ input, textarea, select {
   word-break: break-word;
 }
 
+.chat-image {
+  display: block;
+  max-width: min(100%, 320px);
+  max-height: 240px;
+  border-radius: 12px;
+  margin-bottom: 8px;
+  object-fit: contain;
+  border: 1px solid var(--border);
+}
+
+.composer-file-input {
+  display: none;
+}
+
+.composer-attach {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.15s, color 0.15s;
+}
+
+.composer-attach:hover:not(:disabled) {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+}
+
+.composer-attach:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.composer-image-preview {
+  max-width: 768px;
+  margin: 0 auto 10px;
+  position: relative;
+  display: inline-block;
+}
+
+.composer-image-preview img {
+  max-height: 120px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  display: block;
+}
+
+.composer-image-remove {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.7);
+  color: #fff;
+  font-size: 16px;
+  line-height: 1;
+}
+
 .chat-composer {
   padding: 16px 24px 20px;
   background: linear-gradient(transparent, var(--bg-primary) 20%);

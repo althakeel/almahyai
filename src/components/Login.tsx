@@ -1,5 +1,6 @@
 import { useState, FormEvent, useEffect } from 'react';
 import { firebaseRegister, firebaseLogin } from '../firebase/auth';
+import { checkBackendHealth } from '../api/client';
 
 function getFirebaseErrorMessage(code: string, message?: string): string {
   switch (code) {
@@ -19,6 +20,10 @@ function getFirebaseErrorMessage(code: string, message?: string): string {
       return 'Email sign-in is not enabled. Enable it in Firebase Console → Authentication.';
     case 'auth/network-request-failed':
       return 'Network error. Check your internet connection.';
+    case 'auth/internal-error':
+      return 'Sign-in failed (Firebase internal error). Restart the app and try again.';
+    case 'auth/unauthorized-domain':
+      return 'This app domain is not authorized. Contact support.';
     default:
       return message || 'Authentication failed. Please try again.';
   }
@@ -36,10 +41,16 @@ export default function Login({ authError = '', onClearError }: Props) {
   const [displayName, setDisplayName] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [serverOnline, setServerOnline] = useState<boolean | null>(null);
 
   useEffect(() => {
     if (authError) setError(authError);
   }, [authError]);
+
+  useEffect(() => {
+    if (import.meta.env.DEV) return;
+    checkBackendHealth().then(setServerOnline);
+  }, []);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -134,9 +145,18 @@ export default function Login({ authError = '', onClearError }: Props) {
             />
           </div>
 
-          <button type="submit" className="btn-primary" disabled={loading}>
+          <button type="submit" className="btn-primary" disabled={loading || serverOnline === false}>
             {loading ? 'Signing in...' : mode === 'login' ? 'Sign In' : 'Create Account'}
           </button>
+
+          {serverOnline === false && (
+            <p className="error-msg">
+              Almahy AI cloud server is offline or not configured yet.
+              Open http://3.111.219.248:3847/api/health in a browser — it must show
+              {` {"ok":true,...} `}
+              before the app can sign in.
+            </p>
+          )}
 
           {error && <p className="error-msg">{error}</p>}
         </form>

@@ -31,6 +31,26 @@ export function subscribeToAuth(callback: (user: FirebaseUser | null) => void): 
   return onAuthStateChanged(auth, callback);
 }
 
+export async function waitForAuthUser(): Promise<FirebaseUser> {
+  await auth.authStateReady();
+  if (auth.currentUser) return auth.currentUser;
+
+  return new Promise((resolve, reject) => {
+    const timeout = window.setTimeout(() => {
+      unsub();
+      reject(new Error('Not signed in'));
+    }, 8000);
+
+    const unsub = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        window.clearTimeout(timeout);
+        unsub();
+        resolve(user);
+      }
+    });
+  });
+}
+
 export function mapFirebaseUser(fbUser: FirebaseUser) {
   return {
     uid: fbUser.uid,

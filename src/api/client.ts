@@ -1,11 +1,13 @@
-import { auth } from '../firebase/config';
-import type { User, Workspace, Conversation, Message } from '../types';
+import { waitForAuthUser } from '../firebase/auth';
+import type { User, Workspace, Conversation, Message, MessageImage } from '../types';
 
-const API_BASE = '/api';
+/** Local dev uses Vite proxy; packaged EXE talks to AWS backend on port 3847. */
+const API_BASE = import.meta.env.DEV
+  ? '/api'
+  : (import.meta.env.VITE_API_URL || 'http://3.111.219.248:3847/api');
 
 async function getToken(): Promise<string> {
-  const user = auth.currentUser;
-  if (!user) throw new Error('Not signed in');
+  const user = await waitForAuthUser();
   return user.getIdToken();
 }
 
@@ -32,6 +34,7 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
 export async function checkBackendHealth(): Promise<boolean> {
   try {
     const res = await fetch(`${API_BASE}/health`);
+    if (!res.ok) return false;
     const data = await res.json();
     return data.ok === true;
   } catch {
@@ -104,12 +107,18 @@ export const almahyApi = {
     list: (conversationId: string) => apiFetch<Message[]>(`/conversations/${conversationId}/messages`),
   },
   chat: {
-    send: (conversationId: string, message: string, provider: 'openai' | 'gemini', model: string) =>
+    send: (
+      conversationId: string,
+      message: string,
+      provider: 'openai' | 'gemini',
+      model: string,
+      image?: MessageImage | null
+    ) =>
       apiFetch<{ success: boolean; content?: string; messageId?: string; error?: string }>(
         `/conversations/${conversationId}/chat`,
         {
           method: 'POST',
-          body: JSON.stringify({ message, provider, model }),
+          body: JSON.stringify({ message, provider, model, image: image ?? null }),
         }
       ),
   },

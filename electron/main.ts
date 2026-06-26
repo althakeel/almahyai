@@ -1,5 +1,7 @@
 import { app, BrowserWindow, ipcMain } from 'electron';
 import path from 'path';
+import http from 'http';
+import { startStaticServer } from './static-server';
 import {
   initDatabase,
   ensureFirebaseUser,
@@ -24,8 +26,9 @@ import {
 
 let mainWindow: BrowserWindow | null = null;
 let currentUserId: string | null = null;
+let staticServer: http.Server | null = null;
 
-function createWindow(): void {
+async function createWindow(): Promise<void> {
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -36,6 +39,7 @@ function createWindow(): void {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      partition: 'persist:almahy',
     },
     autoHideMenuBar: true,
     backgroundColor: '#212121',
@@ -46,7 +50,10 @@ function createWindow(): void {
     mainWindow.loadURL('http://localhost:5173');
     mainWindow.webContents.openDevTools();
   } else {
-    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
+    const distPath = path.join(__dirname, '../dist');
+    const { server, port } = await startStaticServer(distPath);
+    staticServer = server;
+    await mainWindow.loadURL(`http://localhost:${port}`);
   }
 
   mainWindow.on('closed', () => {
@@ -157,14 +164,18 @@ function setupIpc(): void {
   });
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   initDatabase();
   setupIpc();
-  createWindow();
+  await createWindow();
 
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+  app.on('activate', async () => {
+    if (BrowserWindow.getAllWindows().length === 0) await createWindow();
   });
+});
+
+app.on('before-quit', () => {
+  staticServer?.close();
 });
 
 app.on('window-all-closed', () => {

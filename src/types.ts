@@ -28,5 +28,11 @@ export interface Message {
   conversationId: string;
   role: 'user' | 'assistant' | 'system';
   content: string;
+  image?: MessageImage | null;
   createdAt: string;
+}
+
+export interface MessageImage {
+  mimeType: string;
+  data: string;
 }

@@ -1,5 +1,10 @@
 import { initializeApp } from 'firebase/app';
-import { initializeAuth, browserLocalPersistence } from 'firebase/auth';
+import {
+  getAuth,
+  initializeAuth,
+  indexedDBLocalPersistence,
+  browserLocalPersistence,
+} from 'firebase/auth';
 
 const firebaseConfig = {
   apiKey: 'AIzaSyCNilmWe6KWaWeF1Myk5qCe5838Mn8Dzmg',
@@ -12,6 +17,15 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
-export const auth = initializeAuth(app, {
-  persistence: browserLocalPersistence,
-});
+
+function createAuth() {
+  try {
+    return initializeAuth(app, {
+      persistence: [indexedDBLocalPersistence, browserLocalPersistence],
+    });
+  } catch {
+    return getAuth(app);
+  }
+}
+
+export const auth = createAuth();

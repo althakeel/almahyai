@@ -41,7 +41,13 @@ export interface Message {
   conversationId: string;
   role: 'user' | 'assistant' | 'system';
   content: string;
+  image?: MessageImage | null;
   createdAt: string;
+}
+
+export interface MessageImage {
+  mimeType: string;
+  data: string;
 }
 
 export interface ApiKeys {
@@ -89,12 +95,25 @@ function messages() {
 }
 
 function getEncryptionKey(): Buffer {
+  const fromEnv = process.env.ENCRYPTION_SECRET;
+  if (fromEnv) {
+    return crypto.createHash('sha256').update(fromEnv).digest();
+  }
+
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
   const keyPath = path.join(DATA_DIR, '.key');
   if (fs.existsSync(keyPath)) return fs.readFileSync(keyPath);
   const key = crypto.randomBytes(32);
   fs.writeFileSync(keyPath, key);
   return key;
+}
+
+function tryDecrypt(encryptedText: string): string | null {
+  try {
+    return decrypt(encryptedText);
+  } catch {
+    return null;
+  }
 }
 
 function encrypt(text: string): string {
@@ -237,8 +256,8 @@ export async function getPlatformApiKeys(): Promise<ApiKeys> {
   const row = await platformConfig().findOne({ _id: PLATFORM_CONFIG_ID });
   if (row?.openaiKey || row?.geminiKey) {
     keys = {
-      openaiKey: row.openaiKey ? decrypt(row.openaiKey as string) : null,
-      geminiKey: row.geminiKey ? decrypt(row.geminiKey as string) : null,
+      openaiKey: row.openaiKey ? tryDecrypt(row.openaiKey as string) : null,
+      geminiKey: row.geminiKey ? tryDecrypt(row.geminiKey as string) : null,
     };
   } else {
     const adminUser = await users().findOne({ email: ADMIN_EMAIL });
@@ -279,8 +298,8 @@ export async function getApiKeys(userId: string): Promise<ApiKeys> {
   const row = await apiKeys().findOne({ userId });
   if (!row) return { openaiKey: null, geminiKey: null };
   return {
-    openaiKey: row.openaiKey ? decrypt(row.openaiKey as string) : null,
-    geminiKey: row.geminiKey ? decrypt(row.geminiKey as string) : null,
+    openaiKey: row.openaiKey ? tryDecrypt(row.openaiKey as string) : null,
+    geminiKey: row.geminiKey ? tryDecrypt(row.geminiKey as string) : null,
   };
 }
 
@@ -356,6 +375,7 @@ export async function getMessages(conversationId: string): Promise<Message[]> {
     conversationId: r.conversationId as string,
     role: r.role as 'user' | 'assistant' | 'system',
     content: r.content as string,
+    image: (r.image as MessageImage | undefined) ?? null,
     createdAt: r.createdAt as string,
   }));
 }
@@ -363,11 +383,14 @@ export async function getMessages(conversationId: string): Promise<Message[]> {
 export async function addMessage(
   conversationId: string,
   role: 'user' | 'assistant' | 'system',
-  content: string
+  content: string,
+  image?: MessageImage | null
 ): Promise<Message> {
   const id = uuidv4();
   const now = new Date().toISOString();
-  await messages().insertOne({ _id: id, conversationId, role, content, createdAt: now });
+  const doc: Record<string, unknown> = { _id: id, conversationId, role, content, createdAt: now };
+  if (image) doc.image = image;
+  await messages().insertOne(doc);
   await conversations().updateOne({ _id: conversationId }, { $set: { updatedAt: now } });
-  return { id, conversationId, role, content, createdAt: now };
+  return { id, conversationId, role, content, image: image ?? null, createdAt: now };
 }
