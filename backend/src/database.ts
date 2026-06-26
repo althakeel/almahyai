@@ -232,20 +232,25 @@ export async function savePlatformApiKeys(keys: ApiKeys): Promise<void> {
 }
 
 export async function getPlatformApiKeys(): Promise<ApiKeys> {
+  let keys: ApiKeys = { openaiKey: null, geminiKey: null };
+
   const row = await platformConfig().findOne({ _id: PLATFORM_CONFIG_ID });
   if (row?.openaiKey || row?.geminiKey) {
-    return {
+    keys = {
       openaiKey: row.openaiKey ? decrypt(row.openaiKey as string) : null,
       geminiKey: row.geminiKey ? decrypt(row.geminiKey as string) : null,
     };
+  } else {
+    const adminUser = await users().findOne({ email: ADMIN_EMAIL });
+    if (adminUser) {
+      keys = await getApiKeys(adminUser._id as string);
+    }
   }
 
-  const adminUser = await users().findOne({ email: ADMIN_EMAIL });
-  if (adminUser) {
-    return getApiKeys(adminUser._id as string);
-  }
-
-  return { openaiKey: null, geminiKey: null };
+  return {
+    openaiKey: keys.openaiKey ?? process.env.OPENAI_API_KEY ?? null,
+    geminiKey: keys.geminiKey ?? process.env.GEMINI_API_KEY ?? null,
+  };
 }
 
 export async function getPlatformApiKeysStatus(): Promise<{ hasOpenai: boolean; hasGemini: boolean }> {
