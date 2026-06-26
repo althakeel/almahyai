@@ -1,0 +1,17 @@
+import { initializeApp } from 'firebase/app';
+import { initializeAuth, browserLocalPersistence } from 'firebase/auth';
+
+const firebaseConfig = {
+  apiKey: 'AIzaSyCNilmWe6KWaWeF1Myk5qCe5838Mn8Dzmg',
+  authDomain: 'almahy-ai.firebaseapp.com',
+  projectId: 'almahy-ai',
+  storageBucket: 'almahy-ai.firebasestorage.app',
+  messagingSenderId: '869396685565',
+  appId: '1:869396685565:web:2fd56426ce9398560f9494',
+  measurementId: 'G-0685R82NY8',
+};
+
+const app = initializeApp(firebaseConfig);
+export const auth = initializeAuth(app, {
+  persistence: browserLocalPersistence,
+});

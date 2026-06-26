@@ -1,0 +1,17 @@
+node_modules/
+dist/
+dist-electron/
+release/
+*.db
+.key
+.env
+.env.*
+!.env.example
+!**/.env.example
+*.log
+backend/node_modules/
+backend/data/
+backend/dist/
+backend/.env
+service-account*.json
+firebase-adminsdk*.json
