@@ -1,3 +1,5 @@
+export type ChatMode = 'general' | 'research' | 'code' | 'creative';
+
 export interface User {
   id: string;
   email: string;

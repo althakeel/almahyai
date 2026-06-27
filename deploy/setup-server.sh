@@ -2,7 +2,7 @@
 # Run on AWS EC2 after SSH: bash deploy/setup-server.sh
 set -e
 
-echo "=== Almahy AI server setup ==="
+echo "=== Orion AI server setup ==="
 
 APP_DIR="${APP_DIR:-$HOME/almahyai}"
 if [ ! -d "$APP_DIR/backend" ]; then
@@ -41,7 +41,7 @@ server {
     }
 
     location = / {
-        return 200 'Almahy AI server is running. Use the desktop app to sign in.';
+        return 200 'Orion AI server is running. Use the desktop app to sign in.';
         add_header Content-Type text/plain;
     }
 }
@@ -57,8 +57,12 @@ sleep 2
 echo -n "Backend direct: "
 curl -s http://127.0.0.1:3847/api/health || echo "FAILED"
 echo
+echo -n "Guest API:      "
+curl -s http://127.0.0.1:3847/api/guest/limits || echo "FAILED (deploy latest backend for guest mode)"
+echo
 echo -n "Via nginx:      "
 curl -s http://127.0.0.1/api/health || echo "FAILED"
 echo
 echo "=== Done ==="
 echo "Test from your PC browser: http://3.111.219.248/api/health"
+echo "Guest chat test: http://3.111.219.248:3847/api/guest/limits"

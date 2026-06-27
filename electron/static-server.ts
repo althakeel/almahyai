@@ -36,15 +36,11 @@ export function startStaticServer(root: string): Promise<{ server: http.Server; 
         const ext = path.extname(filePath);
         const contentType = MIME_TYPES[ext] ?? 'application/octet-stream';
 
-        fs.readFile(filePath, (readErr, data) => {
-          if (readErr) {
-            res.writeHead(404);
-            res.end('Not found');
-            return;
-          }
-          res.writeHead(200, { 'Content-Type': contentType });
-          res.end(data);
+        res.writeHead(200, {
+          'Content-Type': contentType,
+          'Cache-Control': ext === '.html' ? 'no-cache' : 'public, max-age=31536000, immutable',
         });
+        fs.createReadStream(filePath).pipe(res);
       });
     });
 

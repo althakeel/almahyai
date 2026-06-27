@@ -11,5 +11,5 @@
     "rootDir": "electron",
     "esModuleInterop": true
   },
-  "include": ["electron"]
+  "include": ["electron/main.ts", "electron/static-server.ts"]
 }

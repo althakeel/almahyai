@@ -1,6 +1,6 @@
-# Almahy AI Backend
+# Orion AI Backend
 
-Node.js API for the Almahy AI desktop app. Handles Firebase auth verification, MongoDB storage, and Gemini/OpenAI chat.
+Node.js API for the Orion AI desktop app. Handles Firebase auth verification, MongoDB storage, and Gemini/OpenAI chat.
 
 ## Setup
 

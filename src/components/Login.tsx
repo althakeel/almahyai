@@ -1,7 +1,7 @@
 import { useState, FormEvent, useEffect } from 'react';
-import { firebaseRegister, firebaseLogin } from '../firebase/auth';
+import { firebaseRegister, firebaseLogin, firebaseGoogleLogin } from '../firebase/auth';
 import { checkBackendHealth } from '../api/client';
-
+import { IconGoogle } from './Icons';
 function getFirebaseErrorMessage(code: string, message?: string): string {
   switch (code) {
     case 'auth/email-already-in-use':
@@ -17,13 +17,21 @@ function getFirebaseErrorMessage(code: string, message?: string): string {
     case 'auth/too-many-requests':
       return 'Too many attempts. Try again later.';
     case 'auth/operation-not-allowed':
-      return 'Email sign-in is not enabled. Enable it in Firebase Console → Authentication.';
+      return 'This sign-in method is not enabled. Enable Email/Password or Google in Firebase Console → Authentication.';
     case 'auth/network-request-failed':
       return 'Network error. Check your internet connection.';
     case 'auth/internal-error':
       return 'Sign-in failed (Firebase internal error). Restart the app and try again.';
     case 'auth/unauthorized-domain':
       return 'This app domain is not authorized. Contact support.';
+    case 'auth/popup-closed-by-user':
+      return 'Google sign-in was cancelled.';
+    case 'auth/account-exists-with-different-credential':
+      return 'This email is already registered with password. Sign in with email instead.';
+    case 'auth/popup-blocked':
+      return 'Popup blocked. Retrying with redirect...';
+    case 'auth/argument-error':
+      return 'Opening Google sign-in in your browser...';
     default:
       return message || 'Authentication failed. Please try again.';
   }
@@ -32,9 +40,10 @@ function getFirebaseErrorMessage(code: string, message?: string): string {
 interface Props {
   authError?: string;
   onClearError?: () => void;
+  onContinueAsGuest?: () => void;
 }
 
-export default function Login({ authError = '', onClearError }: Props) {
+export default function Login({ authError = '', onClearError, onContinueAsGuest }: Props) {
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -76,6 +85,28 @@ export default function Login({ authError = '', onClearError }: Props) {
     }
   };
 
+  const handleGoogleSignIn = async () => {
+    setError('');
+    onClearError?.();
+    setLoading(true);
+
+    let redirecting = false;
+
+    try {
+      await firebaseGoogleLogin();
+    } catch (err: unknown) {
+      const fbErr = err as { code?: string; message?: string };
+      if (fbErr.message === 'REDIRECT_IN_PROGRESS') {
+        redirecting = true;
+        setError('Opening Google sign-in… complete it in the browser window.');
+        return;
+      }
+      setError(getFirebaseErrorMessage(fbErr.code ?? '', fbErr.message));
+    } finally {
+      if (!redirecting) setLoading(false);
+    }
+  };
+
   const switchMode = (next: 'login' | 'register') => {
     setMode(next);
     setError('');
@@ -86,10 +117,16 @@ export default function Login({ authError = '', onClearError }: Props) {
     <div className="auth-container">
       <div className="auth-card">
         <div className="auth-header">
-          <div className="logo-mark">A</div>
-          <h1>Almahy AI</h1>
-          <p>Sign in to start chatting</p>
+          <div className="logo-mark">O</div>
+          <h1>Orion AI</h1>
+          <p>Sign in for unlimited chat &amp; images</p>
         </div>
+
+        {onContinueAsGuest && (
+          <button type="button" className="btn-guest-link" onClick={onContinueAsGuest}>
+            ← Continue as Guest (20 free messages/day)
+          </button>
+        )}
 
         <div className="auth-tabs">
           <button
@@ -106,6 +143,20 @@ export default function Login({ authError = '', onClearError }: Props) {
           >
             Create Account
           </button>
+        </div>
+
+        <button
+          type="button"
+          className="btn-google"
+          onClick={handleGoogleSignIn}
+          disabled={loading}
+        >
+          <IconGoogle size={20} />
+          <span>{loading ? 'Please wait...' : 'Continue with Google'}</span>
+        </button>
+
+        <div className="auth-divider">
+          <span>or use email</span>
         </div>
 
         <form onSubmit={handleSubmit}>
@@ -151,7 +202,7 @@ export default function Login({ authError = '', onClearError }: Props) {
 
           {serverOnline === false && (
             <p className="error-msg">
-              Almahy AI cloud server is offline or not configured yet.
+              Orion AI cloud server is offline or not configured yet.
               Open http://3.111.219.248:3847/api/health in a browser — it must show
               {` {"ok":true,...} `}
               before the app can sign in.
@@ -160,6 +211,15 @@ export default function Login({ authError = '', onClearError }: Props) {
 
           {error && <p className="error-msg">{error}</p>}
         </form>
+
+        {onContinueAsGuest && (
+          <p className="auth-guest-note">
+            No account?{' '}
+            <button type="button" className="link-btn" onClick={onContinueAsGuest}>
+              Try 20 free messages without signing in
+            </button>
+          </p>
+        )}
       </div>
     </div>
   );

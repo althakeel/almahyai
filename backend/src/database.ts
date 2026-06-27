@@ -5,6 +5,7 @@ import crypto from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 import { getDb, connectMongo } from './mongo';
 import { isAdminEmail, ADMIN_EMAIL, DEFAULT_CHAT_PROVIDER, DEFAULT_CHAT_MODEL } from './config';
+import { initGuestUsageIndexes } from './guest-usage';
 
 const PLATFORM_CONFIG_ID = 'main';
 
@@ -146,6 +147,7 @@ export async function initDatabase(): Promise<void> {
   await workspaces().createIndex({ userId: 1 });
   await conversations().createIndex({ workspaceId: 1, updatedAt: -1 });
   await messages().createIndex({ conversationId: 1, createdAt: 1 });
+  await initGuestUsageIndexes();
 }
 
 export async function ensureFirebaseUser(

@@ -15,9 +15,11 @@ import {
   deleteConversation,
   getMessages,
 } from './database';
-import { sendChatMessage, testOpenAIKey, testGeminiKey, OPENAI_MODELS, GEMINI_MODELS } from './ai-service';
+import { sendChatMessage, sendGuestChatMessage, testOpenAIKey, testGeminiKey, OPENAI_MODELS, GEMINI_MODELS } from './ai-service';
 import { requireAuth } from './middleware/auth';
 import { requireAdmin } from './middleware/admin';
+import { getClientIp } from './middleware/client-ip';
+import { getGuestUsage, consumeGuestRequest, GUEST_REQUEST_LIMIT } from './guest-usage';
 import { isAdminEmail, DEFAULT_CHAT_PROVIDER, DEFAULT_CHAT_MODEL } from './config';
 
 const PORT = Number(process.env.PORT) || 3847;
@@ -27,7 +29,7 @@ app.use(cors({ origin: true, credentials: true }));
 app.use(express.json({ limit: '12mb' }));
 
 app.get('/api/health', (_req, res) => {
-  res.json({ ok: true, service: 'almahy-ai-backend', database: 'mongodb' });
+  res.json({ ok: true, service: 'orion-ai-backend', database: 'mongodb' });
 });
 
 app.post('/api/auth/sync', requireAuth, async (req, res) => {
@@ -54,8 +56,62 @@ app.get('/api/config/chat', (_req, res) => {
   res.json({
     provider: DEFAULT_CHAT_PROVIDER,
     model: DEFAULT_CHAT_MODEL,
-    brandName: 'Almahy AI',
+    brandName: 'Orion AI',
+    guestLimit: GUEST_REQUEST_LIMIT,
   });
+});
+
+app.get('/api/guest/limits', async (req, res) => {
+  const ip = getClientIp(req);
+  const usage = await getGuestUsage(ip);
+  res.json({ success: true, ...usage });
+});
+
+app.post('/api/guest/chat', async (req, res) => {
+  try {
+    const ip = getClientIp(req);
+    const usage = await getGuestUsage(ip);
+
+    if (usage.remaining <= 0) {
+      res.status(429).json({
+        success: false,
+        error: `Guest limit reached (${GUEST_REQUEST_LIMIT} messages per day from your network). Sign in for unlimited access.`,
+        ...usage,
+      });
+      return;
+    }
+
+    if (req.body.image) {
+      res.status(403).json({
+        success: false,
+        error: 'Image upload requires a signed-in account. Please sign in to attach or generate images.',
+      });
+      return;
+    }
+
+    const message = (req.body.message as string) ?? '';
+    if (!message.trim()) {
+      res.status(400).json({ success: false, error: 'Message is required' });
+      return;
+    }
+
+    const history = (req.body.history as Array<{ role: string; content: string }>) ?? [];
+    const mode = req.body.mode ?? 'general';
+
+    const content = await sendGuestChatMessage({ message, history, mode });
+    const afterUse = await consumeGuestRequest(ip);
+
+    res.json({
+      success: true,
+      content,
+      used: afterUse.used,
+      remaining: afterUse.remaining,
+      limit: afterUse.limit,
+    });
+  } catch (err: unknown) {
+    const error = err instanceof Error ? err.message : 'Guest chat failed';
+    res.status(400).json({ success: false, error });
+  }
 });
 
 app.get('/api/models', requireAuth, requireAdmin, (_req, res) => {
@@ -124,14 +180,15 @@ app.get('/api/conversations/:id/messages', requireAuth, async (req, res) => {
 app.post('/api/conversations/:id/chat', requireAuth, async (req, res) => {
   try {
     const isAdmin = isAdminEmail(req.authUser!.email);
-    const { message, provider, model, image } = req.body;
+    const { message, provider, model, image, mode } = req.body;
     const result = await sendChatMessage({
       userId: req.authUser!.uid,
-      conversationId: req.params.id,
+      conversationId: req.params.id as string,
       message: (message as string) ?? '',
       provider: isAdmin ? provider : DEFAULT_CHAT_PROVIDER,
       model: isAdmin ? model : DEFAULT_CHAT_MODEL,
       image: image ?? null,
+      mode: mode ?? 'general',
     });
     res.json({ success: true, ...result });
   } catch (err: unknown) {
@@ -144,7 +201,7 @@ async function start() {
   try {
     await initDatabase();
     app.listen(PORT, '0.0.0.0', () => {
-      console.log(`Almahy AI backend running on port ${PORT}`);
+      console.log(`Orion AI backend running on port ${PORT}`);
       console.log(`Admin email: ${process.env.ADMIN_EMAIL || 'althakeel.com@gmail.com'}`);
     });
   } catch (err) {

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { almahyApi } from '../api/client';
+import { orionApi } from '../api/client';
 
 export default function Settings() {
   const [openaiKey, setOpenaiKey] = useState('');
@@ -10,15 +10,15 @@ export default function Settings() {
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
-    almahyApi.keys.status().then(setStatus);
+    orionApi.keys.status().then(setStatus);
   }, []);
 
   const handleSave = async () => {
-    await almahyApi.keys.save(
+    await orionApi.keys.save(
       openaiKey.trim() || null,
       geminiKey.trim() || null
     );
-    const newStatus = await almahyApi.keys.status();
+    const newStatus = await orionApi.keys.status();
     setStatus(newStatus);
     setOpenaiKey('');
     setGeminiKey('');
@@ -29,7 +29,7 @@ export default function Settings() {
   const handleTestOpenai = async () => {
     if (!openaiKey) return;
     setTesting('openai');
-    const result = await almahyApi.keys.testOpenai(openaiKey);
+    const result = await orionApi.keys.testOpenai(openaiKey);
     setTestResult((prev) => ({ ...prev, openai: result }));
     setTesting(null);
   };
@@ -37,7 +37,7 @@ export default function Settings() {
   const handleTestGemini = async () => {
     if (!geminiKey) return;
     setTesting('gemini');
-    const result = await almahyApi.keys.testGemini(geminiKey);
+    const result = await orionApi.keys.testGemini(geminiKey);
     setTestResult((prev) => ({ ...prev, gemini: result }));
     setTesting(null);
   };
@@ -46,7 +46,7 @@ export default function Settings() {
     <div className="settings-panel">
       <h2>API Settings</h2>
       <p className="admin-badge">
-        Admin only — when you save Gemini or OpenAI keys here, every user can chat with Almahy AI instantly.
+        Admin only — when you save Gemini or OpenAI keys here, every user can chat with Orion AI instantly.
       </p>
 
       <div className="settings-section">
@@ -106,9 +106,9 @@ export default function Settings() {
 
       <div className="settings-section" style={{ marginTop: 40 }}>
         <h3>About</h3>
-        <p>Almahy AI v1.0.0 — Admin panel for API configuration.</p>
+        <p>Orion AI v1.0.3 — Admin panel for API configuration.</p>
         <p style={{ marginTop: 8 }}>
-          Only the admin can manage API keys. All users chat through Almahy AI using these keys.
+          Only the admin can manage API keys. All users chat through Orion AI using these keys.
         </p>
       </div>
     </div>

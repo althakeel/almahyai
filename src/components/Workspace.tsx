@@ -1,8 +1,11 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, lazy, Suspense, useMemo } from 'react';
 import type { User, Workspace as WorkspaceType, Conversation } from '../types';
 import ChatPanel from './ChatPanel';
-import Settings from './Settings';
-import { almahyApi } from '../api/client';
+import { orionApi, checkBackendHealth } from '../api/client';
+import { useTheme } from '../hooks/useTheme';
+import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
+
+const Settings = lazy(() => import('./Settings'));
 
 interface Props {
   user: User;
@@ -10,41 +13,49 @@ interface Props {
 }
 
 export default function Workspace({ user, onLogout }: Props) {
+  const { theme, toggleTheme } = useTheme();
   const [activeWorkspace, setActiveWorkspace] = useState<WorkspaceType | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversation, setActiveConversation] = useState<Conversation | null>(null);
   const [view, setView] = useState<'chat' | 'settings'>('chat');
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [serverOnline, setServerOnline] = useState(true);
   const [provider, setProvider] = useState<'openai' | 'gemini'>('gemini');
   const [model, setModel] = useState('gemini-2.5-flash');
   const [loading, setLoading] = useState(true);
   const [creatingChat, setCreatingChat] = useState(false);
   const [error, setError] = useState('');
   const bootstrapped = useRef(false);
+  const searchRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    almahyApi.config.chat().then((cfg) => {
+    orionApi.config.chat().then((cfg) => {
       setProvider(cfg.provider);
       setModel(cfg.model);
     }).catch(() => {});
+    checkBackendHealth().then(setServerOnline);
+    const interval = window.setInterval(() => checkBackendHealth().then(setServerOnline), 60000);
+    return () => window.clearInterval(interval);
   }, []);
 
   const ensureWorkspace = useCallback(async (): Promise<WorkspaceType> => {
     if (activeWorkspace) return activeWorkspace;
 
-    const list = await almahyApi.workspace.list();
+    const list = await orionApi.workspace.list();
     if (list.length > 0) {
       setActiveWorkspace(list[0]);
       return list[0];
     }
 
-    const created = await almahyApi.workspace.create('My Workspace');
+    const created = await orionApi.workspace.create('My Workspace');
     setActiveWorkspace(created);
     return created;
   }, [activeWorkspace]);
 
   const loadConversations = useCallback(async (workspace: WorkspaceType, autoSelect = true) => {
-    const list = await almahyApi.conversation.list(workspace.id);
+    const list = await orionApi.conversation.list(workspace.id);
     setConversations(list);
     if (autoSelect && list.length > 0) {
       setActiveConversation(list[0]);
@@ -64,7 +75,7 @@ export default function Workspace({ user, onLogout }: Props) {
         const list = await loadConversations(workspace, true);
 
         if (list.length === 0) {
-          const conv = await almahyApi.conversation.create(
+          const conv = await orionApi.conversation.create(
             workspace.id,
             'New Chat',
             'gemini',
@@ -84,7 +95,7 @@ export default function Workspace({ user, onLogout }: Props) {
 
   const createNewChat = useCallback(
     async (workspace: WorkspaceType) => {
-      const conv = await almahyApi.conversation.create(
+      const conv = await orionApi.conversation.create(
         workspace.id,
         'New Chat',
         provider,
@@ -99,7 +110,7 @@ export default function Workspace({ user, onLogout }: Props) {
     [provider, model]
   );
 
-  const handleNewChat = async () => {
+  const handleNewChat = useCallback(async () => {
     setView('chat');
     setCreatingChat(true);
     setError('');
@@ -113,11 +124,11 @@ export default function Workspace({ user, onLogout }: Props) {
     } finally {
       setCreatingChat(false);
     }
-  };
+  }, [ensureWorkspace, createNewChat]);
 
   const handleDeleteConversation = async (id: string) => {
     try {
-      await almahyApi.conversation.delete(id);
+      await orionApi.conversation.delete(id);
       const remaining = conversations.filter((c) => c.id !== id);
       setConversations(remaining);
 
@@ -135,6 +146,31 @@ export default function Workspace({ user, onLogout }: Props) {
     }
   };
 
+  const filteredConversations = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return conversations;
+    return conversations.filter((c) => c.title.toLowerCase().includes(q));
+  }, [conversations, searchQuery]);
+
+  useKeyboardShortcuts(
+    {
+      'ctrl+n': handleNewChat,
+      'ctrl+k': () => {
+        setSearchOpen(true);
+        window.setTimeout(() => searchRef.current?.focus(), 50);
+      },
+      'ctrl+f': () => {
+        setSearchOpen(true);
+        window.setTimeout(() => searchRef.current?.focus(), 50);
+      },
+      escape: () => {
+        setSearchOpen(false);
+        setSearchQuery('');
+      },
+    },
+    view === 'chat'
+  );
+
   return (
     <div className="workspace">
       <aside className={`sidebar ${sidebarOpen ? 'open' : 'collapsed'}`}>
@@ -148,13 +184,26 @@ export default function Workspace({ user, onLogout }: Props) {
             <span className="icon">+</span>
             {creatingChat ? 'Creating...' : 'New chat'}
           </button>
+          {(searchOpen || searchQuery) && (
+            <div className="sidebar-search">
+              <input
+                ref={searchRef}
+                type="search"
+                placeholder="Search chats… (Ctrl+K)"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+            </div>
+          )}
         </div>
 
         <div className="conversation-list">
-          {conversations.length === 0 && !loading && (
-            <p className="sidebar-empty">No chats yet — click New chat</p>
+          {filteredConversations.length === 0 && !loading && (
+            <p className="sidebar-empty">
+              {searchQuery ? 'No matching chats' : 'No chats yet — click New chat'}
+            </p>
           )}
-          {conversations.map((conv) => (
+          {filteredConversations.map((conv) => (
             <button
               type="button"
               key={conv.id}
@@ -166,7 +215,9 @@ export default function Workspace({ user, onLogout }: Props) {
               }}
               onContextMenu={(e) => {
                 e.preventDefault();
-                handleDeleteConversation(conv.id);
+                if (window.confirm(`Delete "${conv.title}"?`)) {
+                  handleDeleteConversation(conv.id);
+                }
               }}
             >
               <span className="chat-icon">💬</span>
@@ -199,12 +250,40 @@ export default function Workspace({ user, onLogout }: Props) {
       </aside>
 
       <main className="main-content">
-        <header className="top-bar">
+        <header className="top-bar advanced-top-bar">
           <button type="button" className="sidebar-toggle" onClick={() => setSidebarOpen(!sidebarOpen)}>
             ☰
           </button>
 
-          {view === 'chat' && <div className="brand-title">Almahy AI</div>}
+          {view === 'chat' && (
+            <>
+              <div className="brand-title">Orion AI</div>
+              <div className="top-bar-status">
+                <span className={`status-pill ${serverOnline ? 'online' : 'offline'}`}>
+                  {serverOnline ? '● Cloud online' : '● Offline'}
+                </span>
+                <span className="status-pill model">{model}</span>
+                <span className="status-pill">Gemini + Web</span>
+              </div>
+            </>
+          )}
+
+          <div className="top-bar-actions">
+            <button
+              type="button"
+              className="top-bar-btn"
+              onClick={() => {
+                setSearchOpen((v) => !v);
+                if (!searchOpen) window.setTimeout(() => searchRef.current?.focus(), 50);
+              }}
+              title="Search chats (Ctrl+K)"
+            >
+              🔍
+            </button>
+            <button type="button" className="top-bar-btn" onClick={toggleTheme} title="Toggle theme">
+              {theme === 'dark' ? '☀️' : '🌙'}
+            </button>
+          </div>
         </header>
 
         {error && (
@@ -215,7 +294,9 @@ export default function Workspace({ user, onLogout }: Props) {
         )}
 
         {view === 'settings' && user.isAdmin ? (
-          <Settings />
+          <Suspense fallback={<div className="chat-loading">Loading settings...</div>}>
+            <Settings />
+          </Suspense>
         ) : loading ? (
           <div className="chat-loading">Loading chats...</div>
         ) : activeConversation ? (

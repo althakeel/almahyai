@@ -2,8 +2,9 @@ import { initializeApp } from 'firebase/app';
 import {
   getAuth,
   initializeAuth,
-  indexedDBLocalPersistence,
   browserLocalPersistence,
+  indexedDBLocalPersistence,
+  browserPopupRedirectResolver,
 } from 'firebase/auth';
 
 const firebaseConfig = {
@@ -22,6 +23,7 @@ function createAuth() {
   try {
     return initializeAuth(app, {
       persistence: [indexedDBLocalPersistence, browserLocalPersistence],
+      popupRedirectResolver: browserPopupRedirectResolver,
     });
   } catch {
     return getAuth(app);

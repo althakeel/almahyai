@@ -1,4 +1,4 @@
-# Almahy AI
+# Orion AI
 
 A dedicated Windows desktop AI workspace application with multi-user support, OpenAI and Google Gemini integration.
 

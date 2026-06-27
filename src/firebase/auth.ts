@@ -1,12 +1,23 @@
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
+  signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
+  GoogleAuthProvider,
   signOut,
   updateProfile,
   onAuthStateChanged,
   type User as FirebaseUser,
 } from 'firebase/auth';
 import { auth } from './config';
+
+const googleProvider = new GoogleAuthProvider();
+googleProvider.setCustomParameters({ prompt: 'select_account' });
+
+function isElectronApp(): boolean {
+  return typeof navigator !== 'undefined' && /Electron/i.test(navigator.userAgent);
+}
 
 export async function firebaseRegister(
   email: string,
@@ -21,6 +32,34 @@ export async function firebaseRegister(
 export async function firebaseLogin(email: string, password: string): Promise<FirebaseUser> {
   const credential = await signInWithEmailAndPassword(auth, email, password);
   return credential.user;
+}
+
+export async function firebaseGoogleLogin(): Promise<FirebaseUser> {
+  if (isElectronApp()) {
+    await signInWithRedirect(auth, googleProvider);
+    throw new Error('REDIRECT_IN_PROGRESS');
+  }
+
+  try {
+    const result = await signInWithPopup(auth, googleProvider);
+    return result.user;
+  } catch (err: unknown) {
+    const code = (err as { code?: string }).code;
+    if (
+      code === 'auth/popup-blocked' ||
+      code === 'auth/operation-not-supported-in-this-environment' ||
+      code === 'auth/argument-error'
+    ) {
+      await signInWithRedirect(auth, googleProvider);
+      throw new Error('REDIRECT_IN_PROGRESS');
+    }
+    throw err;
+  }
+}
+
+export async function resolveGoogleRedirect(): Promise<FirebaseUser | null> {
+  const result = await getRedirectResult(auth);
+  return result?.user ?? null;
 }
 
 export async function firebaseLogout(): Promise<void> {

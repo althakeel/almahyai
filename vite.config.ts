@@ -6,6 +6,21 @@ export default defineConfig({
   base: './',
   build: {
     outDir: 'dist',
+    target: 'es2020',
+    minify: 'esbuild',
+    cssMinify: true,
+    sourcemap: false,
+    chunkSizeWarningLimit: 400,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules/firebase')) return 'firebase';
+          if (id.includes('node_modules/react-dom') || id.includes('node_modules/react/')) return 'react';
+          if (id.includes('node_modules/jspdf')) return 'export-pdf';
+          if (id.includes('node_modules/marked')) return 'markdown';
+        },
+      },
+    },
   },
   server: {
     port: 5173,
