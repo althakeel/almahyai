@@ -21,6 +21,8 @@ export interface ChatRequest {
 
 export type ChatMode = 'general' | 'research' | 'code' | 'creative';
 
+const INTERNAL_CONTACT_NAME = 'Rohith';
+
 const ALMAHY_IDENTITY = `
 IDENTITY (highest priority — always follow):
 - Your name is Almahy AI. You are Almahy AI — one unified assistant platform from Al Thakeel.
@@ -39,13 +41,14 @@ IDENTITY (highest priority — always follow):
 - CONFIDENTIALITY (never break): If asked how Almahy AI was built, who developed it, what technology/APIs/servers/models run behind it, API keys, architecture, source code, or any internal secret:
   NEVER reveal implementation details, vendor names, cloud providers, databases, frameworks, routing logic, or developer information.
   NEVER mention OpenAI, Google, Gemini, ChatGPT, GPT, Claude, Anthropic, AWS, MongoDB, Firebase, Electron, Node.js, or similar as your backend.
-  Give a short, polite public answer only: Almahy AI is a secure product built by Al Thakeel to bring multiple AI capabilities together. Internal technical details are confidential.
-  Then redirect: "How can I help you today?"
+  NEVER name any developer, engineer, or team member except ${INTERNAL_CONTACT_NAME}.
+  Give a short, polite answer: internal technical details are confidential. Say exactly: "Please contact ${INTERNAL_CONTACT_NAME} only for those questions."
+  Do not mention anyone else. Then offer to help with a general task if appropriate.
 - ABOUT US (public info only): When users ask about "us", "you", Almahy AI, Al Thakeel, Althakeel, or the company:
   Share only public, user-facing facts: Al Thakeel is a UAE holding company (retail, e-commerce, lifestyle, technology). Almahy AI is its all-in-one AI assistant for chat, learning, building, and creating. Brands include Store1920, Nexso, Velore Paris, Armed, Gharaam.
   Describe features users can use (chat, learn, build, create, web search, sign-in) — NOT how they are built internally.
-  NEVER name developers, tech stack, servers, API providers, costs, or proprietary methods.
-  If they ask for internal/secret details, politely decline and offer help with a task instead.
+  NEVER name developers or staff except ${INTERNAL_CONTACT_NAME} when directing internal questions.
+  If they ask for internal, technical, partnership, or private company details, say: "Please contact ${INTERNAL_CONTACT_NAME} only for those questions." Do not name anyone else.
 - When users ask about Al Thakeel, Althakeel, Almahy, or althakeel.com: use the ABOUT US public facts above and web search when available.`;
 
 const ALMAHY_PERSONALITY = `You are Almahy AI — a friendly, patient assistant that anyone can use, even without technical experience.
@@ -103,7 +106,7 @@ function sanitizeAlmahyIdentity(text: string): string {
     ],
     [
       /\bour (?:developers?|backend|API keys?|servers?|source code|architecture|infrastructure)\b/gi,
-      'the Almahy AI team',
+      `please contact ${INTERNAL_CONTACT_NAME} only`,
     ],
     [
       /\b(?:I am|I'm) (?:running on|hosted on|deployed on) (?:AWS|Google Cloud|Azure)\b/gi,
@@ -219,13 +222,22 @@ function isConnectionQuestion(message: string): boolean {
 function isAboutUsQuestion(message: string): boolean {
   const text = message.trim().toLowerCase();
   return (
-    /\b(about us|about you|about almahy|about al thakeel|about althakeel|who made you|who built you|who created you|who developed|your developers?|your team|how (?:were you|was almahy|was this) built|how do you work internally|what technology|tech stack|source code|api key|backend|server|architecture|infrastructure|secret)\b/.test(
+    /\b(about us|about you|about almahy|about al thakeel|about althakeel|who made you|who built you|who created you|who developed|your developers?|your team|how (?:were you|was almahy|was this) built|how do you work internally|what technology|tech stack|source code|api key|backend|server|architecture|infrastructure|secret|contact|who (?:is|runs|owns)|rohith)\b/.test(
       text
     ) ||
     /\b(what is almahy|what is al thakeel|tell me about (?:us|you|almahy|al thakeel|althakeel|this (?:app|company|platform)))\b/.test(
       text
     ) ||
-    /\b(almahy ai|al thakeel|althakeel)\b/.test(text) && text.split(/\s+/).length <= 8
+    (/\b(almahy ai|al thakeel|althakeel)\b/.test(text) && text.split(/\s+/).length <= 8)
+  );
+}
+
+function isConfidentialQuestion(message: string): boolean {
+  const text = message.trim().toLowerCase();
+  return (
+    /\b(how (?:were you|was (?:almahy|this|it)) built|who (?:built|made|created|developed|coded|designed)|developers?|engineering team|tech stack|source code|api keys?|backend|server|aws|mongodb|firebase|architecture|infrastructure|internal|secret|proprietary|who works on)\b/.test(
+      text
+    ) || /\b(contact|reach|speak to|talk to).*(?:team|developer|support|admin)\b/.test(text)
   );
 }
 
@@ -238,10 +250,19 @@ function connectionQuestionHint(): string {
 
 function aboutUsQuestionHint(): string {
   return (
-    ' IMPORTANT: The user is asking about Almahy AI / Al Thakeel / us. ' +
-    'Give friendly PUBLIC information only (company, brands, what users can do with Almahy AI). ' +
-    'Do NOT reveal developers, APIs, servers, models, code, keys, or any internal secret. ' +
-    'If they ask for technical internals, say those details are confidential and offer to help with a task.'
+    ` IMPORTANT: The user is asking about Almahy AI / Al Thakeel / us. ` +
+    `Give friendly PUBLIC information only (company, brands, what users can do with Almahy AI). ` +
+    `Do NOT reveal APIs, servers, models, code, keys, or internal secrets. ` +
+    `Do NOT name any person except ${INTERNAL_CONTACT_NAME}. ` +
+    `For internal, technical, or private questions, say exactly: "Please contact ${INTERNAL_CONTACT_NAME} only for those questions."`
+  );
+}
+
+function confidentialQuestionHint(): string {
+  return (
+    ` CRITICAL: This is a confidential/internal question. Do NOT answer with technical details. ` +
+    `Say exactly: "Please contact ${INTERNAL_CONTACT_NAME} only for those questions." ` +
+    `Do not mention any other developer, team member, or vendor.`
   );
 }
 
@@ -249,7 +270,8 @@ function buildModeInstruction(mode: ChatMode | undefined, message: string, webRe
   let instruction = getModeInstruction(mode);
   if (webResultCount > 0) instruction += researchFormatHint();
   if (isConnectionQuestion(message)) instruction += connectionQuestionHint();
-  if (isAboutUsQuestion(message)) instruction += aboutUsQuestionHint();
+  if (isConfidentialQuestion(message)) instruction += confidentialQuestionHint();
+  else if (isAboutUsQuestion(message)) instruction += aboutUsQuestionHint();
   return instruction;
 }
 
