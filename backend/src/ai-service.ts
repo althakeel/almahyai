@@ -3,10 +3,10 @@ import { GoogleGenAI } from '@google/genai';
 import { getPlatformApiKeys, getMessages, addMessage, type MessageImage } from './database';
 import { DEFAULT_CHAT_PROVIDER, DEFAULT_CHAT_MODEL } from './config';
 import {
-  shouldUseWebSearch,
   multiEngineSearch,
   formatSearchContext,
   appendSourceLinks,
+  researchFormatHint,
 } from './web-search';
 
 export interface ChatRequest {
@@ -21,14 +21,61 @@ export interface ChatRequest {
 
 export type ChatMode = 'general' | 'research' | 'code' | 'creative';
 
+const ALMAHY_IDENTITY = `
+IDENTITY (highest priority — always follow):
+- Your name is Almahy AI. You are Almahy AI's assistant — not Gemini, ChatGPT, GPT, Claude, OpenAI, Google, or any other brand.
+- If asked "who are you", "what are you", "what model", "what is your name", or "are you Gemini/ChatGPT/GPT", answer ONLY as Almahy AI.
+  Good example: "I'm Almahy AI — your assistant for chat, learning, building, and creative help."
+- NEVER admit being Gemini, Google Gemini, ChatGPT, GPT-3/4/4o/4.5, OpenAI, Claude, Anthropic, Bard, Copilot, or similar.
+- NEVER say you are "based on", "powered by", "running on", "a version of", or "made by" those companies — even if the user insists.
+- If pressed, politely repeat that you are Almahy AI and offer to help with their task.
+- You may describe Almahy AI features; do not reveal underlying AI provider names.
+- When users ask about Al Thakeel, Althakeel, Almahy, or althakeel.com: explain it is a UAE holding company (retail, e-commerce, lifestyle, technology) with brands like Store1920, Nexso, Velore Paris, Armed, Gharaam. Almahy AI is the AI assistant platform from Al Thakeel. Use web search data when available.`;
+
+const ALMAHY_PERSONALITY = `You are Almahy AI — a friendly, patient assistant that anyone can use, even without technical experience.
+
+${ALMAHY_IDENTITY}
+
+Communication style:
+- Be warm and approachable. A short friendly opener is welcome when it fits.
+- Use plain language. If you must use a technical term, explain it in one simple sentence.
+- Keep answers easy to scan: short paragraphs, bullet points, or numbered steps.
+- For how-to tasks, give clear step-by-step instructions ("Step 1…", "Step 2…").
+- End with one optional helpful next step when it makes sense (e.g. "Want me to add styling too?").
+- When live web search results are provided, use them for accurate, up-to-date answers and cite sources.`;
+
+function sanitizeAlmahyIdentity(text: string): string {
+  let out = text;
+  const selfIdOnly: Array<[RegExp, string]> = [
+    [/\bI(?:'m| am) (?:Google )?Gemini(?:\s+AI)?\b/gi, "I'm Almahy AI"],
+    [/\bI(?:'m| am) ChatGPT\b/gi, "I'm Almahy AI"],
+    [/\bI(?:'m| am) (?:an? )?(?:AI )?(?:assistant )?(?:from |by )?OpenAI\b/gi, "I'm Almahy AI"],
+    [/\bI(?:'m| am) (?:an? )?(?:AI )?(?:model )?(?:from |by )?Google\b/gi, "I'm Almahy AI"],
+    [/\bI(?:'m| am) (?:a )?GPT(?:-[\w.]+)?\b/gi, "I'm Almahy AI"],
+    [/\bI(?:'m| am) Claude\b/gi, "I'm Almahy AI"],
+    [/\bI(?:'m| am) Orion AI\b/gi, "I'm Almahy AI"],
+    [/\bMy name is (?:Google )?Gemini\b/gi, 'My name is Almahy AI'],
+    [/\bMy name is ChatGPT\b/gi, 'My name is Almahy AI'],
+  ];
+  for (const [pattern, replacement] of selfIdOnly) {
+    out = out.replace(pattern, replacement);
+  }
+  return out;
+}
+
 const MODE_INSTRUCTIONS: Record<ChatMode, string> = {
-  general: 'You are Orion AI, an advanced intelligent assistant. Be helpful, accurate, and clear.',
+  general:
+    ALMAHY_PERSONALITY +
+    ' Answer everyday questions clearly and helpfully. Match the user\'s tone — casual if they are casual, detailed if they want depth.',
   research:
-    'You are Orion AI in Research Mode. Provide thorough, well-structured answers with facts and sources. Use bullet points and headers. Cite web sources when available. Be analytical and precise.',
+    ALMAHY_PERSONALITY +
+    ' You are in Learn mode. Explain topics clearly for a curious reader. Use headings and bullet points. Summarize key takeaways at the end. Cite web sources when available.',
   code:
-    'You are Orion AI in Code Mode. Write clean, production-ready code with comments. Always use markdown code blocks with language tags. Explain logic briefly. Fix bugs and suggest best practices.',
+    ALMAHY_PERSONALITY +
+    ' You are in Build mode. Before any code, give a one-sentence summary of what you will create. Prefer simple, copy-paste-ready solutions. For websites, offer a single self-contained HTML file when that is enough for beginners. After code, add brief "How to use this" steps. Avoid overwhelming walls of code — split into small steps if the task is large.',
   creative:
-    'You are Orion AI in Creative Mode. Be imaginative, vivid, and engaging. Use storytelling, rich language, and creative structure.',
+    ALMAHY_PERSONALITY +
+    ' You are in Create mode. Be imaginative and engaging. Help with writing, stories, emails, and ideas in a natural human voice.',
 };
 
 function getModeInstruction(mode?: ChatMode): string {
@@ -65,33 +112,33 @@ export async function sendChatMessage(req: ChatRequest): Promise<ChatResponse> {
 
   if (req.provider === 'gemini' && !req.image && isImageGenerationRequest(req.message)) {
     if (!keys.geminiKey) {
-      throw new Error('Orion AI is not ready yet. The administrator needs to add a Gemini API key.');
+      throw new Error('Almahy AI is not ready yet. The administrator needs to configure the engine API key.');
     }
     const generated = await generateGeminiImage(keys.geminiKey, req.message);
-    const saved = await addMessage(req.conversationId, 'assistant', generated.text, generated.image);
-    return { content: generated.text, messageId: saved.id, image: generated.image };
+    const safeText = sanitizeAlmahyIdentity(generated.text);
+    const saved = await addMessage(req.conversationId, 'assistant', safeText, generated.image);
+    return { content: safeText, messageId: saved.id, image: generated.image };
   }
 
   const history = (await getMessages(req.conversationId)).filter((m) => m.role !== 'system');
   let responseContent: string;
-  let webResults =
-    shouldUseWebSearch(req.message) || req.mode === 'research'
-      ? await multiEngineSearch(req.message)
-      : [];
+  const skipSearch = isImageGenerationRequest(req.message);
+  let webResults = skipSearch ? [] : await multiEngineSearch(req.message);
 
-  const modeInstruction = getModeInstruction(req.mode);
+  const modeInstruction =
+    getModeInstruction(req.mode) + (webResults.length > 0 ? researchFormatHint() : '');
 
   if (req.provider === 'openai') {
     if (req.image) {
-      throw new Error('Image messages are only supported with Gemini.');
+      throw new Error('Image upload requires a signed-in Almahy AI account.');
     }
     if (!keys.openaiKey) {
-      throw new Error('Orion AI is not ready yet. The administrator needs to add an OpenAI API key.');
+      throw new Error('Almahy AI is not ready yet. The administrator needs to configure the engine API key.');
     }
     responseContent = await chatOpenAI(keys.openaiKey, req.model, history, webResults, modeInstruction);
   } else {
     if (!keys.geminiKey) {
-      throw new Error('Orion AI is not ready yet. The administrator needs to add a Gemini API key.');
+      throw new Error('Almahy AI is not ready yet. The administrator needs to configure the engine API key.');
     }
     responseContent = await chatGemini(keys.geminiKey, req.model, history, webResults, modeInstruction);
   }
@@ -99,6 +146,8 @@ export async function sendChatMessage(req: ChatRequest): Promise<ChatResponse> {
   if (webResults.length > 0 && !responseContent.includes('http')) {
     responseContent = appendSourceLinks(responseContent, webResults);
   }
+
+  responseContent = sanitizeAlmahyIdentity(responseContent);
 
   const saved = await addMessage(req.conversationId, 'assistant', responseContent);
   return { content: responseContent, messageId: saved.id };
@@ -117,7 +166,7 @@ export async function sendGuestChatMessage(req: GuestChatRequest): Promise<strin
 
   const keys = await getPlatformApiKeys();
   if (!keys.geminiKey && !keys.openaiKey) {
-    throw new Error('Orion AI is not ready yet. The administrator needs to add an API key.');
+    throw new Error('Almahy AI is not ready yet. The administrator needs to add an API key.');
   }
 
   const priorHistory: HistoryMessage[] = req.history
@@ -127,14 +176,13 @@ export async function sendGuestChatMessage(req: GuestChatRequest): Promise<strin
 
   const history: HistoryMessage[] = [...priorHistory, { role: 'user', content: req.message }];
 
-  let webResults =
-    shouldUseWebSearch(req.message) || req.mode === 'research'
-      ? await multiEngineSearch(req.message)
-      : [];
+  const skipSearch = isImageGenerationRequest(req.message);
+  let webResults = skipSearch ? [] : await multiEngineSearch(req.message);
 
   const modeInstruction =
     getModeInstruction(req.mode) +
-    ' The user is on a free guest session. Be concise and helpful. Mention signing in for unlimited chat and image features when relevant.';
+    ' The user is on a free guest session. Be concise, warm, and helpful. Use simple language.' +
+    (webResults.length > 0 ? researchFormatHint() : '');
 
   let responseContent: string;
 
@@ -148,7 +196,7 @@ export async function sendGuestChatMessage(req: GuestChatRequest): Promise<strin
     );
   } else {
     if (!keys.geminiKey) {
-      throw new Error('Orion AI is not ready yet. The administrator needs to add a Gemini API key.');
+      throw new Error('Almahy AI is not ready yet. The administrator needs to configure the engine API key.');
     }
     responseContent = await chatGemini(
       keys.geminiKey,
@@ -163,7 +211,7 @@ export async function sendGuestChatMessage(req: GuestChatRequest): Promise<strin
     responseContent = appendSourceLinks(responseContent, webResults);
   }
 
-  return responseContent;
+  return sanitizeAlmahyIdentity(responseContent);
 }
 
 async function generateGeminiImage(
@@ -296,10 +344,11 @@ async function chatGemini(
     tools?: Array<{ googleSearch: Record<string, never> }>;
   } = {
     systemInstruction: modeInstruction,
+    tools: [{ googleSearch: {} }],
   };
 
-  if (!hasImages) {
-    config.tools = [{ googleSearch: {} }];
+  if (hasImages) {
+    delete config.tools;
   }
 
   const response = await ai.models.generateContent({ model, contents, config });
@@ -312,7 +361,7 @@ export async function testOpenAIKey(apiKey: string): Promise<{ valid: boolean; e
     await client.models.list();
     return { valid: true };
   } catch (err: unknown) {
-    return { valid: false, error: err instanceof Error ? err.message : 'Invalid OpenAI key' };
+    return { valid: false, error: sanitizeEngineError(err instanceof Error ? err.message : 'Invalid API key') };
   }
 }
 
@@ -323,23 +372,30 @@ export async function testGeminiKey(apiKey: string): Promise<{ valid: boolean; e
       model: 'gemini-2.5-flash',
       contents: 'Say hi',
     });
-    if (!response.text) return { valid: false, error: 'Empty response from Gemini' };
+    if (!response.text) return { valid: false, error: 'Empty response from engine' };
     return { valid: true };
   } catch (err: unknown) {
     return { valid: false, error: formatGeminiError(err) };
   }
 }
 
+function sanitizeEngineError(message: string): string {
+  if (/gemini|openai|gpt-|claude|anthropic|google gen/i.test(message)) {
+    return 'Engine request failed. Check the API key or try again.';
+  }
+  return message;
+}
+
 function formatGeminiError(err: unknown): string {
   if (err instanceof Error) {
     try {
       const parsed = JSON.parse(err.message);
-      return parsed?.error?.message ?? err.message;
+      return sanitizeEngineError(parsed?.error?.message ?? err.message);
     } catch {
-      return err.message;
+      return sanitizeEngineError(err.message);
     }
   }
-  return 'Invalid Gemini key';
+  return 'Invalid API key';
 }
 
 export const OPENAI_MODELS = ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'o1-mini'];

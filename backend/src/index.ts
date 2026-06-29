@@ -54,9 +54,8 @@ app.get('/api/auth/me', requireAuth, async (req, res) => {
 
 app.get('/api/config/chat', (_req, res) => {
   res.json({
-    provider: DEFAULT_CHAT_PROVIDER,
-    model: DEFAULT_CHAT_MODEL,
-    brandName: 'Orion AI',
+    brandName: 'Almahy AI',
+    engineLabel: 'Orion Neural Engine',
     guestLimit: GUEST_REQUEST_LIMIT,
   });
 });

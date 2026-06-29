@@ -181,17 +181,19 @@ async function searchGoogleCse(query: string): Promise<WebSearchResult[]> {
 export function shouldUseWebSearch(message: string): boolean {
   const text = message.trim().toLowerCase();
   if (!text) return false;
-
   if (isImageGenerationRequest(text)) return false;
 
-  const searchSignals =
-    /\b(search|google|yahoo|bing|duckduckgo|look up|lookup|find online|web search|latest|news|today|current|weather|price|score|who is|what is|when did|where is|how much|stock|crypto|live|recent|update|2024|2025|2026)\b/.test(
+  // Skip search only for trivial greetings with no real question
+  if (
+    /^(hi|hello|hey|thanks|thank you|ok|okay|yes|no|bye|yo|good morning|good night|good afternoon|how are you)[!.?\s]*$/i.test(
       text
-    );
+    )
+  ) {
+    return false;
+  }
 
-  const isQuestion = /\?/.test(text) || /^(who|what|when|where|why|how|is|are|did|does|can)\b/.test(text);
-
-  return searchSignals || isQuestion;
+  // Search the web for everything else — companies, facts, news, code help, etc.
+  return true;
 }
 
 function isImageGenerationRequest(text: string): boolean {
@@ -200,12 +202,24 @@ function isImageGenerationRequest(text: string): boolean {
   return (hasAction && hasSubject) || /^draw\b/.test(text) || /\b(image|picture|photo) of\b/.test(text);
 }
 
+export function enhanceSearchQuery(message: string): string {
+  const text = message.trim().toLowerCase();
+  if (/^althakeel$|^al[\s-]?thakeel$/.test(text)) {
+    return 'Al Thakeel UAE holding company retail ecommerce brands';
+  }
+  if (/\balthakeel\b/.test(text) && text.split(/\s+/).length <= 3) {
+    return `${message.trim()} Al Thakeel UAE company`;
+  }
+  return message.trim();
+}
+
 export async function multiEngineSearch(query: string, limit = 8): Promise<WebSearchResult[]> {
+  const searchQuery = enhanceSearchQuery(query);
   const engines = await Promise.allSettled([
-    searchGoogleCse(query),
-    searchYahoo(query),
-    searchBing(query),
-    searchDuckDuckGo(query),
+    searchGoogleCse(searchQuery),
+    searchYahoo(searchQuery),
+    searchBing(searchQuery),
+    searchDuckDuckGo(searchQuery),
   ]);
 
   const merged: WebSearchResult[] = [];
@@ -230,19 +244,29 @@ export function formatSearchContext(results: WebSearchResult[]): string {
 
   const lines = results.map(
     (r, i) =>
-      `[${i + 1}] (${r.source.toUpperCase()}) ${r.title}\nURL: ${r.url}\n${r.snippet || 'No snippet available.'}`
+      `[${i + 1}] ${r.title}\nURL: ${r.url}\n${r.snippet || 'No snippet available.'}`
   );
 
   return (
-    'Live web search results from Google, Yahoo, Bing, and DuckDuckGo:\n\n' +
+    'Live web search results:\n\n' +
     lines.join('\n\n') +
-    '\n\nUse these results to answer accurately. Cite sources when helpful.'
+    '\n\nUse these results to answer accurately. Format with headings, bullet lists, and markdown links [title](url). ' +
+    'Cite sources in a ## Sources section at the end. Do not name search engines in your reply.'
+  );
+}
+
+export function researchFormatHint(): string {
+  return (
+    ' Structure your answer clearly: intro paragraph, ## headings, bullet points, and markdown links [Site name](https://url). ' +
+    'End with ## Sources listing the main links.'
   );
 }
 
 export function appendSourceLinks(answer: string, results: WebSearchResult[]): string {
   if (results.length === 0) return answer;
 
-  const links = results.slice(0, 5).map((r, i) => `${i + 1}. ${r.title} — ${r.url} (${r.source})`);
-  return `${answer.trim()}\n\n---\n**Sources**\n${links.join('\n')}`;
+  const links = results.slice(0, 5).map((r, i) => `${i + 1}. [${r.title}](${r.url})`);
+  const hasSources = /##\s*sources/i.test(answer);
+  if (hasSources) return answer.trim();
+  return `${answer.trim()}\n\n## Sources\n${links.join('\n')}`;
 }
