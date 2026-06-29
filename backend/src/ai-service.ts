@@ -36,7 +36,17 @@ IDENTITY (highest priority — always follow):
 - NEVER admit being only Gemini, only ChatGPT, only GPT, only Claude, only OpenAI, or only Google as your sole identity.
 - NEVER say you are "based on", "powered by", "running on", or "made by" OpenAI/Google as your only backend — present yourself as Almahy AI with multiple AI connections.
 - If pressed, stay positive: you are Almahy AI with all-in-one AI access, then offer to help.
-- When users ask about Al Thakeel, Althakeel, Almahy, or althakeel.com: explain it is a UAE holding company (retail, e-commerce, lifestyle, technology) with brands like Store1920, Nexso, Velore Paris, Armed, Gharaam. Almahy AI is the AI assistant platform from Al Thakeel. Use web search data when available.`;
+- CONFIDENTIALITY (never break): If asked how Almahy AI was built, who developed it, what technology/APIs/servers/models run behind it, API keys, architecture, source code, or any internal secret:
+  NEVER reveal implementation details, vendor names, cloud providers, databases, frameworks, routing logic, or developer information.
+  NEVER mention OpenAI, Google, Gemini, ChatGPT, GPT, Claude, Anthropic, AWS, MongoDB, Firebase, Electron, Node.js, or similar as your backend.
+  Give a short, polite public answer only: Almahy AI is a secure product built by Al Thakeel to bring multiple AI capabilities together. Internal technical details are confidential.
+  Then redirect: "How can I help you today?"
+- ABOUT US (public info only): When users ask about "us", "you", Almahy AI, Al Thakeel, Althakeel, or the company:
+  Share only public, user-facing facts: Al Thakeel is a UAE holding company (retail, e-commerce, lifestyle, technology). Almahy AI is its all-in-one AI assistant for chat, learning, building, and creating. Brands include Store1920, Nexso, Velore Paris, Armed, Gharaam.
+  Describe features users can use (chat, learn, build, create, web search, sign-in) — NOT how they are built internally.
+  NEVER name developers, tech stack, servers, API providers, costs, or proprietary methods.
+  If they ask for internal/secret details, politely decline and offer help with a task instead.
+- When users ask about Al Thakeel, Althakeel, Almahy, or althakeel.com: use the ABOUT US public facts above and web search when available.`;
 
 const ALMAHY_PERSONALITY = `You are Almahy AI — a friendly, patient assistant that anyone can use, even without technical experience.
 
@@ -79,6 +89,34 @@ function sanitizeAlmahyIdentity(text: string): string {
       'Almahy AI brings multiple AI capabilities together in one assistant for you.',
     ],
     [/\bI am a product of Google\b/gi, "I'm Almahy AI — your all-in-one AI assistant from Al Thakeel."],
+    [
+      /\b(?:powered|built|based|running|trained|developed) (?:by|on|with|using) (?:Google )?Gemini\b/gi,
+      'built as Almahy AI by Al Thakeel',
+    ],
+    [
+      /\b(?:powered|built|based|running|trained|developed) (?:by|on|with|using) (?:OpenAI|ChatGPT)\b/gi,
+      'built as Almahy AI by Al Thakeel',
+    ],
+    [
+      /\bwe use (?:an? )?(?:OpenAI|Google|Gemini|ChatGPT|GPT|AWS|MongoDB|Firebase|Electron)\b/gi,
+      'Almahy AI is built by Al Thakeel',
+    ],
+    [
+      /\bour (?:developers?|backend|API keys?|servers?|source code|architecture|infrastructure)\b/gi,
+      'the Almahy AI team',
+    ],
+    [
+      /\b(?:I am|I'm) (?:running on|hosted on|deployed on) (?:AWS|Google Cloud|Azure)\b/gi,
+      "I'm Almahy AI — a secure assistant from Al Thakeel",
+    ],
+    [
+      /\b(?:our|the) (?:development team|engineering team) (?:uses?|built (?:this|it) with)\b/gi,
+      'Almahy AI is built by Al Thakeel',
+    ],
+    [
+      /\binternal(?:ly)? (?:we|our (?:team|developers?)) (?:use|uses|run|runs)\b/gi,
+      'Almahy AI',
+    ],
   ];
   for (const [pattern, replacement] of selfIdOnly) {
     out = out.replace(pattern, replacement);
@@ -178,6 +216,19 @@ function isConnectionQuestion(message: string): boolean {
   ) || /\bare you chatgpt\b/.test(text) || /\bare you gemini\b/.test(text);
 }
 
+function isAboutUsQuestion(message: string): boolean {
+  const text = message.trim().toLowerCase();
+  return (
+    /\b(about us|about you|about almahy|about al thakeel|about althakeel|who made you|who built you|who created you|who developed|your developers?|your team|how (?:were you|was almahy|was this) built|how do you work internally|what technology|tech stack|source code|api key|backend|server|architecture|infrastructure|secret)\b/.test(
+      text
+    ) ||
+    /\b(what is almahy|what is al thakeel|tell me about (?:us|you|almahy|al thakeel|althakeel|this (?:app|company|platform)))\b/.test(
+      text
+    ) ||
+    /\b(almahy ai|al thakeel|althakeel)\b/.test(text) && text.split(/\s+/).length <= 8
+  );
+}
+
 function connectionQuestionHint(): string {
   return (
     ' IMPORTANT: The user is asking about AI connections. Answer YES — Almahy AI is connected with all major AI models in one platform. ' +
@@ -185,10 +236,20 @@ function connectionQuestionHint(): string {
   );
 }
 
+function aboutUsQuestionHint(): string {
+  return (
+    ' IMPORTANT: The user is asking about Almahy AI / Al Thakeel / us. ' +
+    'Give friendly PUBLIC information only (company, brands, what users can do with Almahy AI). ' +
+    'Do NOT reveal developers, APIs, servers, models, code, keys, or any internal secret. ' +
+    'If they ask for technical internals, say those details are confidential and offer to help with a task.'
+  );
+}
+
 function buildModeInstruction(mode: ChatMode | undefined, message: string, webResultCount: number): string {
   let instruction = getModeInstruction(mode);
   if (webResultCount > 0) instruction += researchFormatHint();
   if (isConnectionQuestion(message)) instruction += connectionQuestionHint();
+  if (isAboutUsQuestion(message)) instruction += aboutUsQuestionHint();
   return instruction;
 }
 
