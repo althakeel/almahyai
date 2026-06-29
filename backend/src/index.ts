@@ -22,6 +22,10 @@ import { getClientIp } from './middleware/client-ip';
 import { getGuestUsage, consumeGuestRequest, GUEST_REQUEST_LIMIT } from './guest-usage';
 import { isAdminEmail, DEFAULT_CHAT_PROVIDER, DEFAULT_CHAT_MODEL } from './config';
 
+function routeParam(value: string | string[]): string {
+  return Array.isArray(value) ? (value[0] ?? '') : value;
+}
+
 const PORT = Number(process.env.PORT) || 3847;
 
 const app = express();
@@ -163,15 +167,16 @@ app.post('/api/workspaces', requireAuth, async (req, res) => {
 });
 
 app.get('/api/workspaces/:id/conversations', requireAuth, async (req, res) => {
-  res.json(await getConversations(req.params.id));
+  res.json(await getConversations(routeParam(req.params.id)));
 });
 
 app.post('/api/workspaces/:id/conversations', requireAuth, async (req, res) => {
   const isAdmin = isAdminEmail(req.authUser!.email);
   const { title, provider, model } = req.body;
+  const workspaceId = routeParam(req.params.id);
   res.json(
     await createConversation(
-      req.params.id,
+      workspaceId,
       title ?? 'New Chat',
       isAdmin ? (provider ?? DEFAULT_CHAT_PROVIDER) : DEFAULT_CHAT_PROVIDER,
       isAdmin ? (model ?? DEFAULT_CHAT_MODEL) : DEFAULT_CHAT_MODEL
@@ -180,17 +185,17 @@ app.post('/api/workspaces/:id/conversations', requireAuth, async (req, res) => {
 });
 
 app.patch('/api/conversations/:id', requireAuth, async (req, res) => {
-  await updateConversationTitle(req.params.id, req.body.title as string);
+  await updateConversationTitle(routeParam(req.params.id), req.body.title as string);
   res.json({ success: true });
 });
 
 app.delete('/api/conversations/:id', requireAuth, async (req, res) => {
-  await deleteConversation(req.params.id);
+  await deleteConversation(routeParam(req.params.id));
   res.json({ success: true });
 });
 
 app.get('/api/conversations/:id/messages', requireAuth, async (req, res) => {
-  res.json(await getMessages(req.params.id));
+  res.json(await getMessages(routeParam(req.params.id)));
 });
 
 app.post('/api/conversations/:id/chat', requireAuth, async (req, res) => {
@@ -198,7 +203,7 @@ app.post('/api/conversations/:id/chat', requireAuth, async (req, res) => {
     const { message, image, mode } = req.body;
     const result = await sendChatMessage({
       userId: req.authUser!.uid,
-      conversationId: req.params.id as string,
+      conversationId: routeParam(req.params.id),
       message: (message as string) ?? '',
       provider: 'gemini',
       model: DEFAULT_CHAT_MODEL,

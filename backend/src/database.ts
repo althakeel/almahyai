@@ -4,10 +4,14 @@ import path from 'path';
 import crypto from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 import { getDb, connectMongo } from './mongo';
+import type { Document } from 'mongodb';
 import { isAdminEmail, ADMIN_EMAIL, DEFAULT_CHAT_PROVIDER, DEFAULT_CHAT_MODEL } from './config';
 import { initGuestUsageIndexes } from './guest-usage';
 
 const PLATFORM_CONFIG_ID = 'main';
+
+/** App uses string UUIDs / Firebase UIDs as MongoDB _id — not ObjectId. */
+type StringIdDoc = Document & { _id: string };
 
 const ENCRYPTION_ALGO = 'aes-256-gcm';
 const DATA_DIR = path.join(__dirname, '../data');
@@ -57,7 +61,7 @@ export interface ApiKeys {
 }
 
 function platformConfig() {
-  return getDb().collection('platform_config');
+  return getDb().collection<StringIdDoc>('platform_config');
 }
 
 function mapUser(row: {
@@ -76,7 +80,7 @@ function mapUser(row: {
 }
 
 function users() {
-  return getDb().collection('users');
+  return getDb().collection<StringIdDoc>('users');
 }
 
 function apiKeys() {
@@ -84,15 +88,15 @@ function apiKeys() {
 }
 
 function workspaces() {
-  return getDb().collection('workspaces');
+  return getDb().collection<StringIdDoc>('workspaces');
 }
 
 function conversations() {
-  return getDb().collection('conversations');
+  return getDb().collection<StringIdDoc>('conversations');
 }
 
 function messages() {
-  return getDb().collection('messages');
+  return getDb().collection<StringIdDoc>('messages');
 }
 
 function getEncryptionKey(): Buffer {
@@ -225,7 +229,7 @@ export async function getUserById(userId: string): Promise<User | null> {
   const row = await users().findOne({ _id: userId });
   if (!row) return null;
   return mapUser({
-    _id: row._id as string,
+    _id: row._id,
     email: row.email as string,
     displayName: row.displayName as string,
     createdAt: row.createdAt as string,
@@ -264,7 +268,7 @@ export async function getPlatformApiKeys(): Promise<ApiKeys> {
   } else {
     const adminUser = await users().findOne({ email: ADMIN_EMAIL });
     if (adminUser) {
-      keys = await getApiKeys(adminUser._id as string);
+      keys = await getApiKeys(adminUser._id);
     }
   }
 
@@ -313,7 +317,7 @@ export async function getApiKeysStatus(userId: string): Promise<{ hasOpenai: boo
 export async function getWorkspaces(userId: string): Promise<Workspace[]> {
   const rows = await workspaces().find({ userId }).sort({ createdAt: 1 }).toArray();
   return rows.map((r) => ({
-    id: r._id as string,
+    id: r._id,
     userId: r.userId as string,
     name: r.name as string,
     createdAt: r.createdAt as string,
@@ -330,7 +334,7 @@ export async function createWorkspace(userId: string, name: string): Promise<Wor
 export async function getConversations(workspaceId: string): Promise<Conversation[]> {
   const rows = await conversations().find({ workspaceId }).sort({ updatedAt: -1 }).toArray();
   return rows.map((r) => ({
-    id: r._id as string,
+    id: r._id,
     workspaceId: r.workspaceId as string,
     title: r.title as string,
     provider: r.provider as 'openai' | 'gemini',
@@ -373,7 +377,7 @@ export async function deleteConversation(conversationId: string): Promise<void> 
 export async function getMessages(conversationId: string): Promise<Message[]> {
   const rows = await messages().find({ conversationId }).sort({ createdAt: 1 }).toArray();
   return rows.map((r) => ({
-    id: r._id as string,
+    id: r._id,
     conversationId: r.conversationId as string,
     role: r.role as 'user' | 'assistant' | 'system',
     content: r.content as string,
@@ -390,7 +394,13 @@ export async function addMessage(
 ): Promise<Message> {
   const id = uuidv4();
   const now = new Date().toISOString();
-  const doc: Record<string, unknown> = { _id: id, conversationId, role, content, createdAt: now };
+  const doc: StringIdDoc & {
+    conversationId: string;
+    role: string;
+    content: string;
+    createdAt: string;
+    image?: MessageImage;
+  } = { _id: id, conversationId, role, content, createdAt: now };
   if (image) doc.image = image;
   await messages().insertOne(doc);
   await conversations().updateOne({ _id: conversationId }, { $set: { updatedAt: now } });
