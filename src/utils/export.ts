@@ -44,13 +44,13 @@ export async function exportMessagesToPdf(messages: Message[], title: string): P
 
   doc.setFontSize(9);
   doc.setTextColor(120);
-  doc.text(`Exported ${new Date().toLocaleString()} · Orion AI`, margin, y);
+  doc.text(`Exported ${new Date().toLocaleString()} · Almahy AI`, margin, y);
   y += 20;
 
   for (const msg of messages) {
     if (msg.role === 'system') continue;
 
-    const role = msg.role === 'user' ? 'You' : 'Orion AI';
+    const role = msg.role === 'user' ? 'You' : 'Almahy AI';
     const header = `${role} · ${new Date(msg.createdAt).toLocaleString()}`;
 
     newPageIfNeeded(30);
@@ -100,7 +100,7 @@ export function exportMessagesToExcel(messages: Message[], title: string): void 
       (m) =>
         `<tr>
           <td>${escHtml(new Date(m.createdAt).toLocaleString())}</td>
-          <td>${escHtml(m.role === 'user' ? 'You' : 'Orion AI')}</td>
+          <td>${escHtml(m.role === 'user' ? 'You' : 'Almahy AI')}</td>
           <td>${escHtml(m.content || '')}</td>
           <td>${m.image ? 'Yes' : 'No'}</td>
         </tr>`

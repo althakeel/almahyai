@@ -113,7 +113,7 @@ export const orionApi = {
     list: () => apiFetch<{ openai: string[]; gemini: string[] }>('/models'),
   },
   config: {
-    chat: () => apiFetch<{ provider: 'openai' | 'gemini'; model: string; brandName: string }>('/config/chat'),
+    chat: () => apiFetch<{ brandName: string; engineLabel?: string; guestLimit?: number }>('/config/chat'),
   },
   keys: {
     status: () => apiFetch<{ hasOpenai: boolean; hasGemini: boolean }>('/keys/status'),

@@ -52,11 +52,28 @@ app.get('/api/auth/me', requireAuth, async (req, res) => {
   res.json({ success: true, user });
 });
 
-app.get('/api/config/chat', (_req, res) => {
+app.get('/api/config/chat', async (_req, res) => {
+  const engines = await getPlatformApiKeysStatus();
   res.json({
     brandName: 'Almahy AI',
-    engineLabel: 'Orion Neural Engine',
+    engineLabel: 'Almahy Neural Engine',
     guestLimit: GUEST_REQUEST_LIMIT,
+    engines: {
+      gemini: engines.hasGemini,
+      chatgpt: engines.hasOpenai,
+      openai: engines.hasOpenai,
+    },
+  });
+});
+
+app.get('/api/engines', async (_req, res) => {
+  const engines = await getPlatformApiKeysStatus();
+  res.json({
+    success: true,
+    gemini: engines.hasGemini,
+    chatgpt: engines.hasOpenai,
+    openai: engines.hasOpenai,
+    allConnected: engines.hasGemini && engines.hasOpenai,
   });
 });
 
@@ -178,14 +195,13 @@ app.get('/api/conversations/:id/messages', requireAuth, async (req, res) => {
 
 app.post('/api/conversations/:id/chat', requireAuth, async (req, res) => {
   try {
-    const isAdmin = isAdminEmail(req.authUser!.email);
-    const { message, provider, model, image, mode } = req.body;
+    const { message, image, mode } = req.body;
     const result = await sendChatMessage({
       userId: req.authUser!.uid,
       conversationId: req.params.id as string,
       message: (message as string) ?? '',
-      provider: isAdmin ? provider : DEFAULT_CHAT_PROVIDER,
-      model: isAdmin ? model : DEFAULT_CHAT_MODEL,
+      provider: 'gemini',
+      model: DEFAULT_CHAT_MODEL,
       image: image ?? null,
       mode: mode ?? 'general',
     });

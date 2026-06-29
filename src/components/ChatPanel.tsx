@@ -85,7 +85,7 @@ const MessageRow = memo(function MessageRow({
       <div className="chat-bubble">
         <div className="chat-bubble-header">
           <div className="chat-role-row">
-            <div className="chat-role">{msg.role === 'user' ? 'You' : 'Orion AI'}</div>
+            <div className="chat-role">{msg.role === 'user' ? 'You' : 'Almahy AI'}</div>
             <time className="chat-time" dateTime={msg.createdAt}>
               {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
             </time>
@@ -106,23 +106,21 @@ const MessageRow = memo(function MessageRow({
                   </button>
                   <button
                     type="button"
-                    className="message-action-btn icon-action"
+                    className="message-action-btn icon-action icon-only"
                     onClick={() => onExportPdf(msg)}
-                    title="Download PDF"
-                    aria-label="Download PDF"
+                    title="Save as PDF"
+                    aria-label="Save as PDF"
                   >
                     <IconPdf size={14} />
-                    <span>PDF</span>
                   </button>
                   <button
                     type="button"
-                    className="message-action-btn icon-action"
+                    className="message-action-btn icon-action icon-only"
                     onClick={() => onExportExcel(msg)}
-                    title="Download Excel"
-                    aria-label="Download Excel"
+                    title="Save as Excel"
+                    aria-label="Save as Excel"
                   >
                     <IconExcel size={14} />
-                    <span>Excel</span>
                   </button>
                 </>
               )}
@@ -279,6 +277,63 @@ export default function ChatPanel({
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: sending ? 'auto' : 'smooth' });
   }, [messages, sending]);
+
+  const composerDisabled =
+    sending || (guestMode && (!guestApiReady || guestRemaining <= 0));
+
+  const focusComposer = useCallback(() => {
+    const el = textareaRef.current;
+    if (!el || composerDisabled) return;
+    el.focus();
+  }, [composerDisabled]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(focusComposer, 80);
+    return () => window.clearTimeout(timer);
+  }, [conversation.id, focusComposer]);
+
+  useEffect(() => {
+    const onKeyDown = (e: globalThis.KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+
+      const tag = target.tagName;
+      if (
+        tag === 'INPUT' ||
+        tag === 'TEXTAREA' ||
+        tag === 'SELECT' ||
+        target.isContentEditable
+      ) {
+        return;
+      }
+
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.key === 'Escape' || e.key === 'Tab' || /^F\d+$/.test(e.key)) return;
+
+      const el = textareaRef.current;
+      if (!el || composerDisabled) return;
+
+      if (e.key.length === 1) {
+        e.preventDefault();
+        el.focus();
+        setInput((prev) => {
+          const next = prev + e.key;
+          requestAnimationFrame(() => {
+            el.style.height = 'auto';
+            el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+          });
+          return next;
+        });
+      } else if (e.key === 'Backspace') {
+        e.preventDefault();
+        el.focus();
+        setInput((prev) => prev.slice(0, -1));
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [composerDisabled]);
 
   const clearPendingImage = useCallback(() => {
     setPendingImage(null);
@@ -571,38 +626,26 @@ export default function ChatPanel({
 
   return (
     <div className="chat-panel">
-      <div className="chat-intelligence-bar">
-        <span className="intel-badge">
-          <span className="intel-dot online" />
-          Orion Neural Engine
-        </span>
-        <span className="intel-badge muted">{modeConfig.label} mode</span>
-        {!guestMode && (
-          <span className="intel-badge muted">Web search · Markdown · Export</span>
-        )}
-      </div>
-
       {messages.length > 0 && (
         <div className="chat-export-bar">
-          <span className="chat-export-label">Export chat</span>
           <button
             type="button"
-            className="chat-export-btn"
+            className="chat-export-btn compact"
             onClick={handleExportChatPdf}
             disabled={exporting}
-            title="Download full chat as PDF"
+            title="Save chat as PDF"
           >
             <IconPdf size={15} />
-            <span>{exporting ? 'Creating…' : 'PDF'}</span>
+            <span>{exporting ? 'Saving…' : 'Save PDF'}</span>
           </button>
           <button
             type="button"
-            className="chat-export-btn"
+            className="chat-export-btn compact"
             onClick={handleExportChatExcel}
-            title="Download full chat as Excel"
+            title="Save chat as Excel"
           >
             <IconExcel size={15} />
-            <span>Excel</span>
+            <span>Save Excel</span>
           </button>
         </div>
       )}
@@ -644,8 +687,9 @@ export default function ChatPanel({
               </>
             ) : (
               <>
-                <h2>Orion AI Advanced Workspace</h2>
-                <p>{modeConfig.hint}</p>
+                <div className="chat-welcome-icon">O</div>
+                <h2>Hi! How can I help you today?</h2>
+                <p>Pick a mode below or tap a suggestion to get started.</p>
                 <QuickPrompts prompts={QUICK_PROMPTS} onSelect={handleQuickPrompt} />
               </>
             )}
@@ -672,6 +716,7 @@ export default function ChatPanel({
           <div className="chat-row assistant">
             <div className="chat-avatar assistant">O</div>
             <div className="chat-bubble">
+              <p className="typing-label">Agent is thinking…</p>
               <div className="typing-indicator">
                 <span /><span /><span />
               </div>
@@ -722,7 +767,7 @@ export default function ChatPanel({
             value={input}
             onChange={handleInput}
             onKeyDown={handleKeyDown}
-            placeholder={guestMode ? 'Ask anything — free guest chat...' : 'Message Orion AI...'}
+            placeholder={guestMode ? 'Ask anything…' : modeConfig.placeholder}
             rows={1}
             disabled={sending || (guestMode && (!guestApiReady || guestRemaining <= 0))}
           />
@@ -743,9 +788,9 @@ export default function ChatPanel({
         <p className="composer-hint">
           {guestMode
             ? guestApiReady
-              ? `${guestRemaining} messages left today · Ctrl+Enter to send`
-              : 'Guest chat unavailable — sign in to continue'
-            : `${modeConfig.hint} · Ctrl+Enter send · Export PDF/Excel · ${input.length > 0 ? `${input.length} chars` : 'Ready'}`}
+              ? `${guestRemaining} free messages left · Ctrl+Enter to send`
+              : 'Sign in to continue chatting'
+            : 'Ctrl+Enter to send'}
         </p>
       </div>
     </div>

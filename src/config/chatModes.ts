@@ -6,36 +6,41 @@ export interface ChatModeConfig {
   icon: string;
   description: string;
   hint: string;
+  placeholder: string;
 }
 
 export const CHAT_MODES: ChatModeConfig[] = [
   {
     id: 'general',
-    label: 'General',
+    label: 'Chat',
     icon: '💬',
-    description: 'Everyday questions and tasks',
-    hint: 'Balanced answers for any topic',
+    description: 'Everyday questions',
+    hint: 'Ask me anything — I\'ll keep it simple and clear',
+    placeholder: 'Ask me anything…',
   },
   {
     id: 'research',
-    label: 'Research',
-    icon: '🔍',
-    description: 'Deep analysis with web sources',
-    hint: 'Live search · citations · structured reports',
+    label: 'Learn',
+    icon: '📚',
+    description: 'Explain & research',
+    hint: 'I\'ll explain topics clearly and find useful sources',
+    placeholder: 'What would you like to learn about?',
   },
   {
     id: 'code',
-    label: 'Code',
-    icon: '⌨️',
-    description: 'Programming and debugging',
-    hint: 'Clean code blocks · explanations · fixes',
+    label: 'Build',
+    icon: '🛠',
+    description: 'Websites & code',
+    hint: 'Step-by-step help to build websites, apps, and scripts',
+    placeholder: 'Describe what you want to build…',
   },
   {
     id: 'creative',
-    label: 'Creative',
+    label: 'Create',
     icon: '✨',
-    description: 'Writing, stories, and ideas',
-    hint: 'Imaginative · vivid · engaging prose',
+    description: 'Writing & ideas',
+    hint: 'Emails, stories, and creative writing',
+    placeholder: 'What should we create together?',
   },
 ];
 
@@ -49,50 +54,12 @@ export interface QuickPrompt {
 
 export const QUICK_PROMPTS: QuickPrompt[] = [
   {
-    id: 'summarize',
-    title: 'Summarize',
-    icon: '📋',
+    id: 'help',
+    title: 'Help me with…',
+    icon: '🤝',
     mode: 'general',
-    prompt: 'Summarize the following in clear bullet points:',
+    prompt: 'Help me with:',
   },
-  {
-    id: 'research',
-    title: 'Research topic',
-    icon: '🌐',
-    mode: 'research',
-    prompt: 'Research and explain the latest developments on:',
-  },
-  {
-    id: 'code',
-    title: 'Write code',
-    icon: '💻',
-    mode: 'code',
-    prompt: 'Write production-ready code with comments for:',
-  },
-  {
-    id: 'email',
-    title: 'Draft email',
-    icon: '✉️',
-    mode: 'creative',
-    prompt: 'Write a professional email about:',
-  },
-  {
-    id: 'translate',
-    title: 'Translate',
-    icon: '🌍',
-    mode: 'general',
-    prompt: 'Translate to English (or specify language):',
-  },
-  {
-    id: 'image',
-    title: 'Generate image',
-    icon: '🎨',
-    mode: 'creative',
-    prompt: 'Generate an image of',
-  },
-];
-
-export const GUEST_QUICK_PROMPTS: QuickPrompt[] = [
   {
     id: 'explain',
     title: 'Explain simply',
@@ -101,25 +68,63 @@ export const GUEST_QUICK_PROMPTS: QuickPrompt[] = [
     prompt: 'Explain this in simple terms:',
   },
   {
+    id: 'webpage',
+    title: 'Build a webpage',
+    icon: '🌐',
+    mode: 'code',
+    prompt: 'Build a simple webpage for:',
+  },
+  {
+    id: 'email',
+    title: 'Write an email',
+    icon: '✉️',
+    mode: 'creative',
+    prompt: 'Write a friendly email about:',
+  },
+  {
+    id: 'learn',
+    title: 'Teach me about',
+    icon: '📖',
+    mode: 'research',
+    prompt: 'Teach me about:',
+  },
+  {
+    id: 'image',
+    title: 'Create an image',
+    icon: '🎨',
+    mode: 'creative',
+    prompt: 'Create an image of',
+  },
+];
+
+export const GUEST_QUICK_PROMPTS: QuickPrompt[] = [
+  {
     id: 'help',
-    title: 'Help me with',
+    title: 'Help me with…',
     icon: '🤝',
     mode: 'general',
     prompt: 'Help me with:',
   },
   {
-    id: 'code',
-    title: 'Write code',
-    icon: '💻',
+    id: 'explain',
+    title: 'Explain simply',
+    icon: '💡',
+    mode: 'general',
+    prompt: 'Explain this in simple terms:',
+  },
+  {
+    id: 'webpage',
+    title: 'Build a webpage',
+    icon: '🌐',
     mode: 'code',
-    prompt: 'Write clean code with comments for:',
+    prompt: 'Build a simple webpage for:',
   },
   {
     id: 'email',
-    title: 'Draft email',
+    title: 'Write an email',
     icon: '✉️',
     mode: 'creative',
-    prompt: 'Write a short professional email about:',
+    prompt: 'Write a short email about:',
   },
 ];
 

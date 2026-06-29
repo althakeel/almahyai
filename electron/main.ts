@@ -7,8 +7,9 @@ let mainWindow: BrowserWindow | null = null;
 let staticServer: http.Server | null = null;
 
 if (app.isPackaged) {
-  app.commandLine.appendSwitch('js-flags', '--max-old-space-size=512');
-  app.commandLine.appendSwitch('disable-features', 'SpareRendererForSitePerProcess');
+  app.commandLine.appendSwitch('js-flags', '--max-old-space-size=384 --optimize-for-size');
+  app.commandLine.appendSwitch('disable-features', 'SpareRendererForSitePerProcess,CalculateNativeWinOcclusion');
+  app.commandLine.appendSwitch('disable-http2');
 }
 
 app.disableHardwareAcceleration();
@@ -26,7 +27,7 @@ async function createWindow(): Promise<void> {
       nodeIntegration: false,
       sandbox: true,
       partition: 'persist:orion',
-      backgroundThrottling: true,
+      backgroundThrottling: false,
       spellcheck: false,
       enableWebSQL: false,
       v8CacheOptions: 'code',

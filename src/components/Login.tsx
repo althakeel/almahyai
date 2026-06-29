@@ -17,7 +17,7 @@ function getFirebaseErrorMessage(code: string, message?: string): string {
     case 'auth/too-many-requests':
       return 'Too many attempts. Try again later.';
     case 'auth/operation-not-allowed':
-      return 'This sign-in method is not enabled. Enable Email/Password or Google in Firebase Console → Authentication.';
+      return 'This sign-in method is not enabled. Contact support.';
     case 'auth/network-request-failed':
       return 'Network error. Check your internet connection.';
     case 'auth/internal-error':
@@ -118,7 +118,7 @@ export default function Login({ authError = '', onClearError, onContinueAsGuest 
       <div className="auth-card">
         <div className="auth-header">
           <div className="logo-mark">O</div>
-          <h1>Orion AI</h1>
+          <h1>Almahy AI</h1>
           <p>Sign in for unlimited chat &amp; images</p>
         </div>
 

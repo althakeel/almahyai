@@ -50,7 +50,7 @@ export default function GuestWorkspace({ onSignIn }: Props) {
             <div className="guest-brand">
               <div className="logo-mark guest-logo">O</div>
               <div>
-                <div className="guest-brand-title">Orion AI</div>
+                <div className="guest-brand-title">Almahy AI</div>
                 <div className="guest-brand-sub">Free guest session</div>
               </div>
             </div>

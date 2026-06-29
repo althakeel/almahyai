@@ -8,7 +8,7 @@ interface Props {
 export default function QuickPrompts({ prompts, onSelect }: Props) {
   return (
     <div className="quick-prompts">
-      <p className="quick-prompts-label">Quick actions</p>
+      <p className="quick-prompts-label">Try asking</p>
       <div className="quick-prompts-grid">
         {prompts.map((p) => (
           <button key={p.id} type="button" className="quick-prompt-card" onClick={() => onSelect(p)}>

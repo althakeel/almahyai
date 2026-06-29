@@ -14,6 +14,14 @@ function MarkdownMessage({ content, isAssistant = false }: Props) {
     let cancelled = false;
 
     import('marked').then(({ marked }) => {
+      marked.use({
+        renderer: {
+          link({ href, title, text }) {
+            const t = title ? ` title="${title}"` : '';
+            return `<a href="${href}"${t} target="_blank" rel="noopener noreferrer">${text}</a>`;
+          },
+        },
+      });
       marked.setOptions({ breaks: true, gfm: true });
       const rendered = marked.parse(content) as string;
       if (!cancelled) setHtml(rendered);

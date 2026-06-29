@@ -13,6 +13,11 @@ interface Props {
 }
 
 export default function Workspace({ user, onLogout }: Props) {
+  const handleLogout = () => {
+    const ok = window.confirm('Are you sure you want to sign out?');
+    if (ok) onLogout();
+  };
+
   const { theme, toggleTheme } = useTheme();
   const [activeWorkspace, setActiveWorkspace] = useState<WorkspaceType | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -22,8 +27,8 @@ export default function Workspace({ user, onLogout }: Props) {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
   const [serverOnline, setServerOnline] = useState(true);
-  const [provider, setProvider] = useState<'openai' | 'gemini'>('gemini');
-  const [model, setModel] = useState('gemini-2.5-flash');
+  const provider = 'gemini' as const;
+  const model = 'gemini-2.5-flash';
   const [loading, setLoading] = useState(true);
   const [creatingChat, setCreatingChat] = useState(false);
   const [error, setError] = useState('');
@@ -31,10 +36,6 @@ export default function Workspace({ user, onLogout }: Props) {
   const searchRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    orionApi.config.chat().then((cfg) => {
-      setProvider(cfg.provider);
-      setModel(cfg.model);
-    }).catch(() => {});
     checkBackendHealth().then(setServerOnline);
     const interval = window.setInterval(() => checkBackendHealth().then(setServerOnline), 60000);
     return () => window.clearInterval(interval);
@@ -233,7 +234,7 @@ export default function Workspace({ user, onLogout }: Props) {
               className={`sidebar-menu-btn ${view === 'settings' ? 'active' : ''}`}
               onClick={() => setView('settings')}
             >
-              ⚙️ API Settings
+              ⚙️ Engine Settings
             </button>
           )}
           <div className="user-menu">
@@ -242,7 +243,7 @@ export default function Workspace({ user, onLogout }: Props) {
               <span className="user-name">{user.displayName}</span>
               <span className="user-email">{user.email}</span>
             </div>
-            <button type="button" className="logout-btn" onClick={onLogout} title="Sign out">
+            <button type="button" className="logout-btn" onClick={handleLogout} title="Sign out">
               ↪
             </button>
           </div>
@@ -257,13 +258,11 @@ export default function Workspace({ user, onLogout }: Props) {
 
           {view === 'chat' && (
             <>
-              <div className="brand-title">Orion AI</div>
+              <div className="brand-title">Almahy AI</div>
               <div className="top-bar-status">
                 <span className={`status-pill ${serverOnline ? 'online' : 'offline'}`}>
-                  {serverOnline ? '● Cloud online' : '● Offline'}
+                  {serverOnline ? '● Ready' : '● Offline'}
                 </span>
-                <span className="status-pill model">{model}</span>
-                <span className="status-pill">Gemini + Web</span>
               </div>
             </>
           )}

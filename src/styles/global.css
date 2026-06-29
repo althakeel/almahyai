@@ -818,6 +818,7 @@ input, textarea, select {
 .chat-export-bar {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 8px;
   padding: 8px 20px;
   border-bottom: 1px solid var(--border);
@@ -880,6 +881,46 @@ input, textarea, select {
 .chat-welcome p {
   color: var(--text-muted);
   font-size: 15px;
+  margin-bottom: 8px;
+}
+
+.chat-welcome-icon {
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 16px;
+  border-radius: 14px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 26px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 20px rgba(16, 163, 127, 0.25);
+}
+
+.chat-mode-bar-wrap {
+  padding-bottom: 4px;
+}
+
+.chat-mode-hint {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin: 0 0 10px;
+  min-height: 18px;
+}
+
+.message-action-btn.icon-only span {
+  display: none;
+}
+
+.message-action-btn.icon-only {
+  padding: 6px 8px;
+}
+
+.chat-export-btn.compact {
+  font-size: 12px;
+  padding: 6px 12px;
 }
 
 .chat-row {
@@ -1404,6 +1445,12 @@ input, textarea, select {
   background: var(--bg-hover);
 }
 
+.typing-label {
+  margin: 0 0 6px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
 .typing-indicator {
   display: flex;
   gap: 4px;
@@ -1603,11 +1650,9 @@ input, textarea, select {
 }
 
 .quick-prompts-label {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--text-muted);
   margin-bottom: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
 }
 
 .quick-prompts-grid {

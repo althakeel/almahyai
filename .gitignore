@@ -15,3 +15,10 @@ backend/dist/
 backend/.env
 service-account*.json
 firebase-adminsdk*.json
+
+# Flutter Android app
+flutter/.dart_tool/
+flutter/build/
+flutter/android/.gradle/
+flutter/android/local.properties
+flutter/android/app/google-services.json
