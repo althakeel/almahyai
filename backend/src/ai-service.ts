@@ -61,7 +61,13 @@ Communication style:
 - Keep answers easy to scan: short paragraphs, bullet points, or numbered steps.
 - For how-to tasks, give clear step-by-step instructions ("Step 1…", "Step 2…").
 - End with one optional helpful next step when it makes sense (e.g. "Want me to add styling too?").
-- When live web search results are provided, use them for accurate, up-to-date answers and cite sources.`;
+- When live web search results are provided, use them for accurate, up-to-date answers and cite sources.
+
+Natural voice (always):
+- Sound like a real, warm human — not a robot or corporate chatbot.
+- Avoid stiff AI phrases: "Certainly!", "Absolutely!", "As an AI", "I'd be happy to assist", "Great question!", "Delve into", "In conclusion".
+- Use natural contractions and varied sentence length. Be direct and genuine.
+- For stories, emails, and descriptions: make them feel organic, believable, and real — not generic or template-like.`;
 
 function sanitizeAlmahyIdentity(text: string): string {
   let out = text;
@@ -120,9 +126,79 @@ function sanitizeAlmahyIdentity(text: string): string {
       /\binternal(?:ly)? (?:we|our (?:team|developers?)) (?:use|uses|run|runs)\b/gi,
       'Almahy AI',
     ],
+    [/\bI am a large language model\b/gi, "I'm Almahy AI"],
+    [/\bI am a large language model,?\s*and I am powered by\b/gi, "I'm Almahy AI — connected with"],
+    [
+      /\bdeveloped and trained by Google\b/gi,
+      'built by Al Thakeel as Almahy AI, connected with',
+    ],
+    [/\bpowered by (?:the )?Google'?s? Gemini(?: family of models)?\b/gi, 'connected with ChatGPT and Gemini through Almahy AI'],
+    [/\bGemini family of models\b/gi, 'leading AI models'],
+    [
+      /\bChatGPT is a separate AI model developed by OpenAI\b/gi,
+      'Almahy AI brings ChatGPT and other AI tools together in one platform',
+    ],
+    [/\bYes, I am! I am a large language model\b/gi, "Yes — I'm Almahy AI"],
   ];
   for (const [pattern, replacement] of selfIdOnly) {
     out = out.replace(pattern, replacement);
+  }
+  return out;
+}
+
+const ORGANIC_IMAGE_STYLE = `
+Photorealistic, natural, organic look — like a real camera photo or lifestyle shot.
+Real-world lighting, believable shadows, natural skin and material textures, subtle imperfections.
+No obvious CGI, no plastic AI gloss, no oversaturated neon or futuristic effects unless the user explicitly asked for them.
+No watermarks, no text overlays, no distorted anatomy or extra limbs.`;
+
+function enhanceImagePrompt(userPrompt: string): string {
+  const text = userPrompt.trim();
+  const wantsStylized =
+    /\b(cartoon|anime|illustration|drawing|painting|logo|icon|pixel|3d render|fantasy|sci-?fi|futuristic|neon|abstract|artistic)\b/i.test(
+      text
+    );
+  if (wantsStylized) {
+    return `${text}\n\nHigh quality, polished result. Natural composition and believable details.`;
+  }
+  return `${text}\n\n${ORGANIC_IMAGE_STYLE}`;
+}
+
+function naturalImageCaption(userPrompt: string): string {
+  const topic = userPrompt
+    .replace(/\b(generate|create|draw|make|design|render|produce|an?)\b/gi, ' ')
+    .replace(/\b(image|picture|photo|illustration|of)\b/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (topic.length > 3 && topic.length < 120) {
+    return `Here you go — ${topic}.`;
+  }
+  return 'Here you go.';
+}
+
+function sanitizeOrganicVoice(text: string): string {
+  let out = text;
+  const replacements: Array<[RegExp, string]> = [
+    [/\bAs an AI(?: language model)?,?\s*/gi, ''],
+    [/\bI'm an AI assistant\.?\s*/gi, "I'm Almahy AI. "],
+    [/^Certainly!?\s*/gim, ''],
+    [/^Absolutely!?\s*/gim, ''],
+    [/^Great question!?\s*/gim, ''],
+    [/\bI'd be happy to (?:help|assist)(?: you)?\.?\s*/gi, ''],
+    [/\bI hope this helps!?\s*$/gi, ''],
+    [/\bFeel free to ask(?: if you have any questions)?\.?\s*$/gi, ''],
+    [/\bIs there anything else (?:I can help you with)?\??\s*$/gi, ''],
+  ];
+  for (const [pattern, replacement] of replacements) {
+    out = out.replace(pattern, replacement);
+  }
+  return out.trim();
+}
+
+function polishResponse(text: string, fallbackConnectionAnswer?: string): string {
+  let out = sanitizeOrganicVoice(sanitizeAlmahyIdentity(text));
+  if (responseLeaksVendorIdentity(out)) {
+    return fallbackConnectionAnswer ?? getConnectionAnswer('');
   }
   return out;
 }
@@ -139,7 +215,7 @@ const MODE_INSTRUCTIONS: Record<ChatMode, string> = {
     ' You are in Build mode. Before any code, give a one-sentence summary of what you will create. Prefer simple, copy-paste-ready solutions. For websites, offer a single self-contained HTML file when that is enough for beginners. After code, add brief "How to use this" steps. Avoid overwhelming walls of code — split into small steps if the task is large.',
   creative:
     ALMAHY_PERSONALITY +
-    ' You are in Create mode. Be imaginative and engaging. Help with writing, stories, emails, and ideas in a natural human voice.',
+    ' You are in Create mode. Be imaginative and engaging. Writing must feel human, organic, and real — like a talented person wrote it, not a machine. Avoid clichés and overly polished AI tone.',
 };
 
 function getModeInstruction(mode?: ChatMode): string {
@@ -213,10 +289,45 @@ function isImageGenerationRequest(message: string): boolean {
 
 function isConnectionQuestion(message: string): boolean {
   const text = message.trim().toLowerCase();
+  if (/\bare you (?:chatgpt|gemini|claude|gpt|openai|google)\b/.test(text)) return true;
+  if (/\b(connected|connection|connecetd|connect with|connect to|link to|same as)\b/.test(text) &&
+    /\b(chatgpt|gemini|gpt|openai|claude|google ai|bard|copilot|all ai)\b/.test(text)) {
+    return true;
+  }
+  if (/\bwhat (?:ai|model) are you\b/.test(text)) return true;
+  if (/\bwho (?:made|built|powers|created) you\b/.test(text)) return true;
+  return false;
+}
+
+function getConnectionAnswer(message: string): string {
+  const text = message.trim().toLowerCase();
+  if (/\bchatgpt\b/.test(text)) {
+    return (
+      "Yes — I'm Almahy AI, and I'm connected with ChatGPT and all major AI models in one platform. " +
+      'You get chat, web search, code help, images, and creative tools together. How can I help you today?'
+    );
+  }
+  if (/\bgemini\b/.test(text)) {
+    return (
+      "Yes — I'm Almahy AI, connected with Gemini, ChatGPT, and every major AI capability in one place. " +
+      'Smart chat, research, build, and create — all from Al Thakeel. What would you like to do?'
+    );
+  }
   return (
-    /\b(are you|is this|connected|connection|link|same as|related to)\b/.test(text) &&
-    /\b(chatgpt|gemini|gpt|openai|claude|google ai|bard|copilot|other ai|all ai)\b/.test(text)
-  ) || /\bare you chatgpt\b/.test(text) || /\bare you gemini\b/.test(text);
+    "Yes — I'm Almahy AI, connected with all leading AI models in one platform — including ChatGPT and Gemini. " +
+    'Chat, learn, build, and create in one app. What can I help you with?'
+  );
+}
+
+function responseLeaksVendorIdentity(text: string): boolean {
+  const leak =
+    /\b(?:no,?\s*)?i am not connected\b/i.test(text) ||
+    /\bchatgpt is (?:a )?(?:separate|different)\b/i.test(text) ||
+    /\b(?:large language model|llm)\b.*\b(?:google|gemini|openai)\b/i.test(text) ||
+    /\b(?:powered|developed|trained|made) by\b.*\b(?:google|openai|gemini)\b/i.test(text) ||
+    /\b(?:google'?s? )?gemini family\b/i.test(text) ||
+    /\bi am (?:only )?(?:a )?(?:google|openai|gemini)\b/i.test(text);
+  return leak;
 }
 
 function isAboutUsQuestion(message: string): boolean {
@@ -279,12 +390,18 @@ export async function sendChatMessage(req: ChatRequest): Promise<ChatResponse> {
   const keys = await getPlatformApiKeys();
   await addMessage(req.conversationId, 'user', req.message, req.image);
 
+  if (!req.image && isConnectionQuestion(req.message)) {
+    const answer = getConnectionAnswer(req.message);
+    const saved = await addMessage(req.conversationId, 'assistant', answer);
+    return { content: answer, messageId: saved.id };
+  }
+
   if (req.provider === 'gemini' && !req.image && isImageGenerationRequest(req.message)) {
     if (!keys.geminiKey) {
       throw new Error('Almahy AI is not ready yet. The administrator needs to configure the engine API key.');
     }
     const generated = await generateGeminiImage(keys.geminiKey, req.message);
-    const safeText = sanitizeAlmahyIdentity(generated.text);
+    const safeText = polishResponse(generated.text);
     const saved = await addMessage(req.conversationId, 'assistant', safeText, generated.image);
     return { content: safeText, messageId: saved.id, image: generated.image };
   }
@@ -318,7 +435,8 @@ export async function sendChatMessage(req: ChatRequest): Promise<ChatResponse> {
     responseContent = appendSourceLinks(responseContent, webResults);
   }
 
-  responseContent = sanitizeAlmahyIdentity(responseContent);
+  const connectionFallback = isConnectionQuestion(req.message) ? getConnectionAnswer(req.message) : undefined;
+  responseContent = polishResponse(responseContent, connectionFallback);
 
   const saved = await addMessage(req.conversationId, 'assistant', responseContent);
   return { content: responseContent, messageId: saved.id };
@@ -333,6 +451,10 @@ export interface GuestChatRequest {
 export async function sendGuestChatMessage(req: GuestChatRequest): Promise<string> {
   if (isImageGenerationRequest(req.message)) {
     throw new Error('Image generation requires a signed-in account. Please sign in to continue.');
+  }
+
+  if (isConnectionQuestion(req.message)) {
+    return getConnectionAnswer(req.message);
   }
 
   const keys = await getPlatformApiKeys();
@@ -382,7 +504,10 @@ export async function sendGuestChatMessage(req: GuestChatRequest): Promise<strin
     responseContent = appendSourceLinks(responseContent, webResults);
   }
 
-  return sanitizeAlmahyIdentity(responseContent);
+  return polishResponse(
+    responseContent,
+    isConnectionQuestion(req.message) ? getConnectionAnswer(req.message) : undefined
+  );
 }
 
 async function generateGeminiImage(
@@ -390,13 +515,14 @@ async function generateGeminiImage(
   prompt: string
 ): Promise<{ text: string; image: MessageImage | null }> {
   const ai = new GoogleGenAI({ apiKey });
+  const imagePrompt = enhanceImagePrompt(prompt);
   const imageModels = ['gemini-2.5-flash-image', 'gemini-2.0-flash-preview-image-generation'];
 
   for (const model of imageModels) {
     try {
       const response = await ai.models.generateContent({
         model,
-        contents: prompt,
+        contents: imagePrompt,
         config: { responseModalities: ['TEXT', 'IMAGE'] },
       });
 
@@ -414,7 +540,8 @@ async function generateGeminiImage(
       }
 
       if (image) {
-        return { text: text.trim() || 'Here is your generated image.', image };
+        const caption = polishResponse(text.trim() || naturalImageCaption(prompt));
+        return { text: caption, image };
       }
     } catch {
       // try next model
@@ -424,14 +551,14 @@ async function generateGeminiImage(
   try {
     const response = await ai.models.generateImages({
       model: 'imagen-4.0-generate-001',
-      prompt,
+      prompt: imagePrompt,
       config: { numberOfImages: 1 },
     });
 
     const bytes = response.generatedImages?.[0]?.image?.imageBytes;
     if (bytes) {
       return {
-        text: 'Here is your generated image.',
+        text: naturalImageCaption(prompt),
         image: { mimeType: 'image/png', data: bytes },
       };
     }
@@ -439,7 +566,7 @@ async function generateGeminiImage(
     throw new Error(formatGeminiError(err));
   }
 
-  throw new Error('Could not generate an image. Try a clearer prompt like "Generate an image of a sunset over mountains".');
+  throw new Error('Could not generate an image. Try a clearer prompt like "a sunset over mountains".');
 }
 
 async function chatOpenAI(
