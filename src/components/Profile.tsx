@@ -8,6 +8,7 @@ import {
   isEmailPasswordUser,
 } from '../firebase/auth';
 import { orionApi } from '../api/client';
+import { SUPPORTED_FILE_CONVERSIONS, LEGAL_SECTIONS, COMPANY_NAME, PRODUCT_NAME, COMPANY_WEBSITE } from '../config/legal';
 import ConfirmDialog from './ConfirmDialog';
 
 interface Props {
@@ -136,6 +137,78 @@ export default function Profile({ user, onBack, onLogout, onUserUpdate, onAccoun
           <div className="profile-hero-email">{user.email}</div>
           <span className="profile-badge">{signInMethod === 'google' ? 'Google account' : 'Email account'}</span>
         </div>
+      </div>
+
+      <div className="profile-card">
+        <h2>Account details</h2>
+        <ul className="profile-legal-list">
+          <li>
+            <span className="profile-detail-label">Email</span>
+            <span>{user.email}</span>
+          </li>
+          <li>
+            <span className="profile-detail-label">Sign-in</span>
+            <span>{signInMethod === 'google' ? 'Google' : 'Email & password'}</span>
+          </li>
+          <li>
+            <span className="profile-detail-label">Member since</span>
+            <span>{new Date(user.createdAt).toLocaleDateString()}</span>
+          </li>
+          <li>
+            <span className="profile-detail-label">Product</span>
+            <span>{PRODUCT_NAME} by {COMPANY_NAME}</span>
+          </li>
+        </ul>
+      </div>
+
+      <div className="profile-card">
+        <h2>File conversions</h2>
+        <p className="profile-desc">Attach a file in chat and ask to convert. Supported formats:</p>
+        <ul className="profile-legal-list">
+          {SUPPORTED_FILE_CONVERSIONS.map((item) => (
+            <li key={item}>{item}</li>
+          ))}
+        </ul>
+        <p className="profile-hint">Example: attach Excel → &quot;convert this to PDF&quot; → Download on the reply.</p>
+      </div>
+
+      <div className="profile-card">
+        <h2>Legal &amp; privacy</h2>
+        <div className="profile-legal-block">
+          <h3>Account &amp; data</h3>
+          <ul className="profile-legal-list">
+            {LEGAL_SECTIONS.account.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+        </div>
+        <div className="profile-legal-block">
+          <h3>Privacy</h3>
+          <ul className="profile-legal-list">
+            {LEGAL_SECTIONS.privacy.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+        </div>
+        <div className="profile-legal-block">
+          <h3>Terms of use</h3>
+          <ul className="profile-legal-list">
+            {LEGAL_SECTIONS.terms.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+        </div>
+        <div className="profile-legal-block">
+          <h3>Company</h3>
+          <ul className="profile-legal-list">
+            {LEGAL_SECTIONS.company.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+        </div>
+        <p className="profile-hint">
+          More info: <a href={COMPANY_WEBSITE} target="_blank" rel="noopener noreferrer">{COMPANY_WEBSITE}</a>
+        </p>
       </div>
 
       <div className="profile-card">

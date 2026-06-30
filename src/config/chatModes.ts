@@ -124,6 +124,20 @@ export const QUICK_PROMPTS: QuickPrompt[] = [
     prompt: 'Convert this Excel file to PDF:',
   },
   {
+    id: 'pdf-to-excel',
+    title: 'Convert PDF to Excel',
+    icon: '🔄',
+    mode: 'creative',
+    prompt: 'Convert this PDF file to Excel:',
+  },
+  {
+    id: 'pdf-to-csv',
+    title: 'Convert PDF to CSV',
+    icon: '📋',
+    mode: 'creative',
+    prompt: 'Convert this PDF file to CSV:',
+  },
+  {
     id: 'image',
     title: 'Create an image',
     icon: '🎨',

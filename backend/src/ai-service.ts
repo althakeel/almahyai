@@ -2,8 +2,9 @@ import OpenAI from 'openai';
 import { GoogleGenAI } from '@google/genai';
 import { getPlatformApiKeys, getMessages, addMessage, type MessageImage, type MessageAttachment } from './database';
 import { DEFAULT_CHAT_PROVIDER, DEFAULT_CHAT_MODEL } from './config';
-import { prepareAttachment, isPdfMime, isExcelMime, isTextMime, attachmentForStorage } from './file-content';
-import { convertSpreadsheetToPdf } from './excel-to-pdf';
+import { prepareAttachment, isPdfMime, isExcelMime, attachmentForStorage } from './file-content';
+import { detectFileConversion, runFileConversion, conversionSuccessMessage } from './file-conversions';
+import { getPublicLegalSummary, getSupportedConversionsText } from './legal-info';
 import {
   multiEngineSearch,
   formatSearchContext,
@@ -55,7 +56,9 @@ IDENTITY (highest priority — always follow):
 - When users ask about Al Thakeel, Althakeel, Almahy, or althakeel.com: use the ABOUT US public facts above and web search when available.
 - FILE UPLOADS (critical): Users can attach PDF, Excel, CSV, text, and images. When file content appears in the message (between === FILE CONTENT === markers, as sheet data, or as an attached PDF document), you HAVE access to it.
   NEVER say you cannot read PDFs, cannot open files, cannot access documents, or ask the user to copy-paste from a file they already uploaded.
-  Read the provided file content and answer directly. Summarize, extract facts, and help with questions about the file.`;
+  Read the provided file content and answer directly. Summarize, extract facts, and help with questions about the file.
+- FILE CONVERSIONS (in-app): Almahy AI converts files directly when the user attaches a file and asks to convert. Supported: Excel/CSV to PDF, PDF to Excel, PDF to CSV, Excel to CSV, Text to PDF. Tell users to attach the file and say "convert to PDF" or "convert to Excel" — never give manual Microsoft Office steps for conversions Almahy can do.
+- LEGAL & ACCOUNT (public): For terms, privacy, account, or data questions, share: Almahy AI is by Al Thakeel (UAE). Users manage account from Profile (password, sign out, delete account). Uploaded files are processed for their request only. Users must verify important legal/medical/financial answers independently. Internal/partnership contact: ${INTERNAL_CONTACT_NAME} only.`;
 
 const ALMAHY_PERSONALITY = `You are Almahy AI — a friendly, patient assistant that anyone can use, even without technical experience.
 
@@ -393,24 +396,22 @@ function noFakeImageHint(): string {
   );
 }
 
-function isSpreadsheetAttachment(attachment: MessageAttachment): boolean {
+
+function isLegalOrAccountQuestion(message: string): boolean {
+  const text = message.trim().toLowerCase();
   return (
-    isExcelMime(attachment.mimeType) ||
-    (isTextMime(attachment.mimeType) && /\.csv$/i.test(attachment.filename))
+    /\b(terms of service|terms and conditions|privacy policy|legal|account details|my account|data policy|delete my data|what data|gdpr|copyright|disclaimer)\b/.test(
+      text
+    ) || /\b(what conversions|file conversions|convert files)\b/.test(text)
   );
 }
 
-function isExcelToPdfConversionRequest(message: string, attachment?: MessageAttachment | null): boolean {
-  if (!attachment || !isSpreadsheetAttachment(attachment)) return false;
+function getLegalAnswer(message: string): string {
   const text = message.trim().toLowerCase();
-  if (!/\bpdf\b/.test(text)) return false;
-  return (
-    /\b(convert|export|save|turn|change|make|transform)\b/.test(text) ||
-    /\b(to|into|in)\s+pdf\b/.test(text) ||
-    /\bexcel\b.*\bpdf\b/.test(text) ||
-    /\b(spreadsheet|xlsx|xls|csv)\b.*\bpdf\b/.test(text) ||
-    /\bmin\s+pdf\b/.test(text)
-  );
+  if (/\b(convert|conversion|file type)\b/.test(text)) {
+    return getSupportedConversionsText();
+  }
+  return getPublicLegalSummary();
 }
 
 function isConnectionQuestion(message: string): boolean {
@@ -518,6 +519,8 @@ function fileAttachmentHint(attachmentMime?: string): string {
     hint +=
       ' PDF EDITING: If they ask to edit, rewrite, update, fix, or improve the PDF, output the FULL revised document ' +
       'with clear headings (## Section) and paragraphs so they can save it as a new PDF. Do not say you cannot edit PDFs.';
+    hint +=
+      ' PDF CONVERSIONS: To convert this PDF to Excel or CSV, say "convert to Excel" or "convert to CSV" — Almahy does it automatically.';
   }
   if (attachmentMime && isExcelMime(attachmentMime)) {
     hint +=
@@ -525,7 +528,7 @@ function fileAttachmentHint(attachmentMime?: string): string {
       'as markdown table(s) with a header row (| Column | ... |) so they can save it as a new Excel file. ' +
       'Include all sheets if multiple; label each with ## Sheet: Name. Do not say you cannot edit Excel files.';
     hint +=
-      ' EXCEL TO PDF: If they ask to convert or export the attached spreadsheet to PDF, tell them to say "convert this to PDF" — Almahy AI will convert it automatically. Do not give manual Microsoft Excel steps.';
+      ' FILE CONVERSIONS: Almahy converts attached files directly — Excel/CSV to PDF, PDF to Excel/CSV, Excel to CSV. Say "convert to PDF" or "convert to Excel" with the file attached. Never give manual Microsoft Office steps.';
   }
   return hint;
 }
@@ -579,20 +582,20 @@ export async function sendChatMessage(req: ChatRequest): Promise<ChatResponse> {
 
   const hasUpload = !!req.image || !!attachment;
 
-  if (attachment && isExcelToPdfConversionRequest(req.message, attachment)) {
-    const { pdfBase64, pdfFilename } = convertSpreadsheetToPdf(
-      attachment.data,
-      attachment.mimeType,
-      attachment.filename
-    );
-    const pdfAttachment: MessageAttachment = {
-      mimeType: 'application/pdf',
-      data: pdfBase64,
-      filename: pdfFilename,
-    };
-    const content = `I've converted "${attachment.filename}" to PDF. Click Download PDF below to save it on your computer.`;
-    const saved = await addMessage(req.conversationId, 'assistant', content, null, pdfAttachment);
-    return { content, messageId: saved.id, attachment: pdfAttachment };
+  if (attachment) {
+    const conversionKind = detectFileConversion(req.message, attachment);
+    if (conversionKind) {
+      const output = await runFileConversion(conversionKind, attachment);
+      const content = conversionSuccessMessage(attachment.filename, output);
+      const saved = await addMessage(req.conversationId, 'assistant', content, null, output);
+      return { content, messageId: saved.id, attachment: output };
+    }
+  }
+
+  if (!hasUpload && isLegalOrAccountQuestion(req.message)) {
+    const answer = getLegalAnswer(req.message);
+    const saved = await addMessage(req.conversationId, 'assistant', answer);
+    return { content: answer, messageId: saved.id };
   }
 
   if (!hasUpload && isConfidentialQuestion(req.message)) {

@@ -43,7 +43,7 @@ function truncate(text: string): string {
   return `${text.slice(0, MAX_EXTRACT_CHARS)}\n\n[Content truncated — file is very large.]`;
 }
 
-async function extractPdfText(data: string): Promise<string> {
+export async function extractPdfText(data: string): Promise<string> {
   let parser: PDFParse | null = null;
   try {
     const buffer = Buffer.from(data, 'base64');
