@@ -74,7 +74,7 @@ export default function Settings() {
           <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer">
             Google AI Studio
           </a>
-          . Powers chat, web search, and images.
+          . Powers chat, web search, and backup images.
         </p>
         <div className="key-input-group">
           <input
@@ -101,7 +101,7 @@ export default function Settings() {
           <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer">
             OpenAI Platform
           </a>
-          . Powers ChatGPT-style answers (especially Build mode).
+          . Powers ChatGPT-style answers and HD photorealistic images (same DALL-E 3 engine as ChatGPT).
         </p>
         <div className="key-input-group">
           <input
@@ -128,8 +128,9 @@ export default function Settings() {
       <div className="settings-section" style={{ marginTop: 40 }}>
         <h3>How it works</h3>
         <ul style={{ marginTop: 8, paddingLeft: 20, lineHeight: 1.7 }}>
-          <li><strong>Chat / Learn / Create</strong> → uses Gemini (web search + images)</li>
+          <li><strong>Chat / Learn / Create</strong> → uses Gemini (web search + chat)</li>
           <li><strong>Build (code)</strong> → uses ChatGPT when the OpenAI key is saved</li>
+          <li><strong>Realistic photos</strong> → uses ChatGPT DALL-E 3 HD when OpenAI key is saved (best quality)</li>
           <li>With both keys, Almahy AI is connected to all major AI engines</li>
         </ul>
         <p style={{ marginTop: 12 }}>

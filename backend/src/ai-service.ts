@@ -158,10 +158,26 @@ function sanitizeAlmahyIdentity(text: string): string {
 }
 
 const ORGANIC_IMAGE_STYLE = `
-Photorealistic, natural, organic look — like a real camera photo or lifestyle shot.
-Real-world lighting, believable shadows, natural skin and material textures, subtle imperfections.
-No obvious CGI, no plastic AI gloss, no oversaturated neon or futuristic effects unless the user explicitly asked for them.
-No watermarks, no text overlays, no distorted anatomy or extra limbs.`;
+Ultra-photorealistic photograph — indistinguishable from a real camera or smartphone photo.
+Natural ambient light, accurate skin texture, realistic hair and fabric, shallow depth of field.
+Candid lifestyle composition like a real Instagram or iPhone photo — NOT stock-photo clichés, NOT 3D/CGI look.
+No watermark, no text overlay, no distorted hands or extra fingers.`;
+
+function wantsPhotorealisticImage(prompt: string): boolean {
+  return /\b(realistic|photo|photograph|photorealistic|lifelike|real life|camera|iphone|selfie|portrait|natural|dslr|mirror)\b/i.test(
+    prompt
+  );
+}
+
+function pickDalleImageSize(prompt: string): '1024x1024' | '1792x1024' | '1024x1792' {
+  if (/\b(portrait|selfie|standing|full body|person|girl|woman|man|boy|holding phone|mirror)\b/i.test(prompt)) {
+    return '1024x1792';
+  }
+  if (/\b(landscape|panorama|wide|sunset|mountains|cityscape|beach horizon)\b/i.test(prompt)) {
+    return '1792x1024';
+  }
+  return '1024x1024';
+}
 
 function enhanceImagePrompt(userPrompt: string): string {
   const text = userPrompt.trim();
@@ -171,6 +187,9 @@ function enhanceImagePrompt(userPrompt: string): string {
     );
   if (wantsStylized) {
     return `${text}\n\nHigh quality, polished result. Natural composition and believable details.`;
+  }
+  if (wantsPhotorealisticImage(text)) {
+    return `${text}\n\n${ORGANIC_IMAGE_STYLE}`;
   }
   return `${text}\n\n${ORGANIC_IMAGE_STYLE}`;
 }
@@ -792,30 +811,51 @@ async function generateImage(
   keys: EngineKeys,
   prompt: string
 ): Promise<{ text: string; image: MessageImage | null }> {
+  const errors: string[] = [];
+
+  if (keys.openaiKey) {
+    try {
+      return await generateOpenAIImage(keys.openaiKey, prompt, { quality: 'hd', style: 'natural' });
+    } catch (err: unknown) {
+      errors.push(err instanceof Error ? err.message : 'OpenAI image failed');
+    }
+  }
+
   if (keys.geminiKey) {
     try {
       return await generateGeminiImage(keys.geminiKey, prompt);
-    } catch {
-      // try OpenAI fallback
+    } catch (err: unknown) {
+      errors.push(err instanceof Error ? err.message : 'Gemini image failed');
     }
   }
-  if (keys.openaiKey) {
-    return await generateOpenAIImage(keys.openaiKey, prompt);
+
+  if (errors.length > 0) {
+    throw new Error(
+      errors[0] ??
+        'Could not generate an image. Add a ChatGPT (OpenAI) API key in Engine Settings for ChatGPT-quality photos.'
+    );
   }
-  throw new Error('Could not generate an image. Try a clearer prompt like "a sunset over mountains".');
+
+  throw new Error(
+    'Could not generate an image. Add Gemini and ChatGPT API keys in Engine Settings, then try again.'
+  );
 }
 
 async function generateOpenAIImage(
   apiKey: string,
-  prompt: string
+  prompt: string,
+  options: { quality?: 'standard' | 'hd'; style?: 'vivid' | 'natural' } = {}
 ): Promise<{ text: string; image: MessageImage | null }> {
   const client = new OpenAI({ apiKey });
   const imagePrompt = enhanceImagePrompt(prompt).slice(0, 3900);
+  const size = pickDalleImageSize(prompt);
   const response = await client.images.generate({
     model: 'dall-e-3',
     prompt: imagePrompt,
     n: 1,
-    size: '1024x1024',
+    size,
+    quality: options.quality ?? 'hd',
+    style: options.style ?? 'natural',
     response_format: 'b64_json',
   });
 
