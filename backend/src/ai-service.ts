@@ -323,16 +323,72 @@ export interface ChatResponse {
   image?: MessageImage | null;
 }
 
-function isImageGenerationRequest(message: string): boolean {
+function isImageGenerationRequest(message: string, history?: HistoryMessage[]): boolean {
   const text = message.trim().toLowerCase();
   if (!text) return false;
 
-  const hasAction = /\b(generate|create|draw|make|design|paint|render|produce)\b/.test(text);
-  const hasSubject = /\b(image|picture|photo|illustration|logo|artwork|drawing|portrait|poster|icon|banner)\b/.test(text);
+  const hasAction = /\b(generate|create|draw|make|design|paint|render|produce|show|give me)\b/.test(text);
+  const hasSubject =
+    /\b(image|picture|photo|illustration|logo|artwork|drawing|portrait|poster|icon|banner|graphic)\b/.test(text);
   const startsWithDraw = /^draw\b/.test(text);
   const imageOf = /\b(image|picture|photo) of\b/.test(text);
+  const createImage = /\bcreate an? (image|picture|photo)\b/.test(text);
 
-  return (hasAction && hasSubject) || startsWithDraw || imageOf;
+  if ((hasAction && hasSubject) || startsWithDraw || imageOf || createImage) {
+    return true;
+  }
+
+  const recent = history?.slice(-8) ?? [];
+  const imageThread = recent.some(
+    (m) =>
+      (m.role === 'assistant' && !!m.image) ||
+      (m.role === 'user' && /\b(generate|create|draw|image|picture|photo)\b/i.test(m.content))
+  );
+
+  if (imageThread) {
+    const followUp =
+      /\b(another|again|new|different|version|updated|redo|retry|with|add|include|put|show|ghost|same|similar|like that|holding|mobile|phone)\b/i.test(
+        text
+      ) || /\bhere(?:'s| is)\b/i.test(text);
+    const notPureQuestion = !/^(what|why|how|when|where|who|can you explain)\b/i.test(text);
+    if (followUp && notPureQuestion) return true;
+  }
+
+  return false;
+}
+
+function responseClaimsImage(text: string): boolean {
+  return (
+    /\bhere(?:'s| is) (?:the |your )?image\b/i.test(text) ||
+    /\b(i(?:'ve| have) (?:created|generated|made|drawn|produced) (?:an? |the )?(?:image|picture|photo))\b/i.test(
+      text
+    ) ||
+    /\b(image|picture|photo) (?:is|has been) (?:ready|attached|below|above)\b/i.test(text)
+  );
+}
+
+function stripFakeImageClaims(text: string): string {
+  return text
+    .replace(/\n*here(?:'s| is) (?:the |your )?image:?\s*$/i, '')
+    .replace(/\n*i(?:'ve| have) (?:created|generated) (?:an? )?(?:image|picture)[^.!?]*[.!?]?\s*$/i, '')
+    .trim();
+}
+
+function buildImagePromptFromContext(message: string, history: HistoryMessage[]): string {
+  const recent = history
+    .slice(-6)
+    .filter((m) => m.role === 'user' || m.role === 'assistant')
+    .map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content.slice(0, 500)}`)
+    .join('\n');
+  return recent ? `${message}\n\nContext from this chat:\n${recent}` : message;
+}
+
+function noFakeImageHint(): string {
+  return (
+    ' IMPORTANT: In text chat you cannot attach or display images. ' +
+    'Never write "Here is the image" or claim an image was generated unless the image engine already returned one. ' +
+    'If they want a picture, describe the idea briefly and suggest a clear prompt like "Create an image of …".'
+  );
 }
 
 function isConnectionQuestion(message: string): boolean {
@@ -477,8 +533,11 @@ function buildModeInstruction(
   else if (/\b(pdf|document|report|letter|proposal)\b/i.test(message)) instruction += pdfCreationHint();
   else if (/\b(excel|spreadsheet|xlsx|xls|csv|worksheet|workbook)\b/i.test(message)) instruction += excelCreationHint();
   if (isConnectionQuestion(message)) instruction += connectionQuestionHint();
-  if (isConfidentialQuestion(message)) instruction += confidentialQuestionHint();
+  else if (isConfidentialQuestion(message)) instruction += confidentialQuestionHint();
   else if (isAboutUsQuestion(message)) instruction += aboutUsQuestionHint();
+  if (!hasFileAttachment && /\b(image|picture|photo|draw|illustration|portrait)\b/i.test(message)) {
+    instruction += noFakeImageHint();
+  }
   return instruction;
 }
 
@@ -508,17 +567,18 @@ export async function sendChatMessage(req: ChatRequest): Promise<ChatResponse> {
     return { content: answer, messageId: saved.id };
   }
 
-  if (req.provider === 'gemini' && !hasUpload && isImageGenerationRequest(req.message)) {
-    if (!keys.geminiKey) {
+  const history = (await getMessages(req.conversationId)).filter((m) => m.role !== 'system');
+
+  if (!hasUpload && isImageGenerationRequest(req.message, history)) {
+    if (!keys.geminiKey && !keys.openaiKey) {
       throw new Error('Almahy AI is not ready yet. The administrator needs to configure the engine API key.');
     }
-    const generated = await generateGeminiImage(keys.geminiKey, req.message);
+    const prompt = buildImagePromptFromContext(req.message, history);
+    const generated = await generateImage(keys, prompt);
     const safeText = polishResponse(generated.text);
     const saved = await addMessage(req.conversationId, 'assistant', safeText, generated.image);
     return { content: safeText, messageId: saved.id, image: generated.image };
   }
-
-  const history = (await getMessages(req.conversationId)).filter((m) => m.role !== 'system');
 
   // Keep full attachment (with PDF binary) on the latest user message for Gemini document vision.
   if (attachment && history.length > 0) {
@@ -532,7 +592,7 @@ export async function sendChatMessage(req: ChatRequest): Promise<ChatResponse> {
   }
 
   let responseContent: string;
-  const skipSearch = isImageGenerationRequest(req.message) || hasUpload;
+  const skipSearch = isImageGenerationRequest(req.message, history) || hasUpload;
   const needsSearch =
     !skipSearch && (req.mode === 'research' || shouldUseWebSearch(req.message, req.mode));
   const webResults = needsSearch
@@ -585,6 +645,18 @@ export async function sendChatMessage(req: ChatRequest): Promise<ChatResponse> {
       : undefined;
   const fileFallback = attachment?.extractedText;
   responseContent = polishResponse(responseContent, identityFallback, fileFallback);
+
+  if (!hasUpload && (keys.geminiKey || keys.openaiKey) && responseClaimsImage(responseContent)) {
+    try {
+      const prompt = buildImagePromptFromContext(req.message, history);
+      const generated = await generateImage(keys, prompt);
+      const safeText = polishResponse(generated.text);
+      const saved = await addMessage(req.conversationId, 'assistant', safeText, generated.image);
+      return { content: safeText, messageId: saved.id, image: generated.image };
+    } catch {
+      responseContent = stripFakeImageClaims(responseContent);
+    }
+  }
 
   const saved = await addMessage(req.conversationId, 'assistant', responseContent);
   return { content: responseContent, messageId: saved.id };
@@ -671,6 +743,48 @@ export async function sendGuestChatMessage(req: GuestChatRequest): Promise<strin
         ? getConnectionAnswer(req.message)
         : undefined
   );
+}
+
+async function generateImage(
+  keys: EngineKeys,
+  prompt: string
+): Promise<{ text: string; image: MessageImage | null }> {
+  if (keys.geminiKey) {
+    try {
+      return await generateGeminiImage(keys.geminiKey, prompt);
+    } catch {
+      // try OpenAI fallback
+    }
+  }
+  if (keys.openaiKey) {
+    return await generateOpenAIImage(keys.openaiKey, prompt);
+  }
+  throw new Error('Could not generate an image. Try a clearer prompt like "a sunset over mountains".');
+}
+
+async function generateOpenAIImage(
+  apiKey: string,
+  prompt: string
+): Promise<{ text: string; image: MessageImage | null }> {
+  const client = new OpenAI({ apiKey });
+  const imagePrompt = enhanceImagePrompt(prompt).slice(0, 3900);
+  const response = await client.images.generate({
+    model: 'dall-e-3',
+    prompt: imagePrompt,
+    n: 1,
+    size: '1024x1024',
+    response_format: 'b64_json',
+  });
+
+  const b64 = response.data?.[0]?.b64_json;
+  if (!b64) {
+    throw new Error('Could not generate an image. Try a simpler description.');
+  }
+
+  return {
+    text: naturalImageCaption(prompt),
+    image: { mimeType: 'image/png', data: b64 },
+  };
 }
 
 async function generateGeminiImage(
