@@ -1537,6 +1537,25 @@ input, textarea, select {
 .chat-doc-attachment {
   margin-bottom: 10px;
   max-width: min(100%, 420px);
+  flex-wrap: wrap;
+}
+
+.chat-doc-download-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.chat-doc-download-btn:hover {
+  filter: brightness(1.05);
 }
 
 .composer-doc-icon,

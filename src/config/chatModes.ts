@@ -117,6 +117,13 @@ export const QUICK_PROMPTS: QuickPrompt[] = [
     prompt: 'I will attach an Excel file. Please read it and update the spreadsheet with these changes:',
   },
   {
+    id: 'excel-to-pdf',
+    title: 'Convert Excel to PDF',
+    icon: '📑',
+    mode: 'creative',
+    prompt: 'Convert this Excel file to PDF:',
+  },
+  {
     id: 'image',
     title: 'Create an image',
     icon: '🎨',

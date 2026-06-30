@@ -188,7 +188,7 @@ export const orionApi = {
       mode?: ChatMode,
       attachment?: MessageAttachment | null
     ) =>
-      apiFetch<{ success: boolean; content?: string; messageId?: string; image?: MessageImage | null; error?: string }>(
+      apiFetch<{ success: boolean; content?: string; messageId?: string; image?: MessageImage | null; attachment?: MessageAttachment | null; error?: string }>(
         `/conversations/${conversationId}/chat`,
         {
           method: 'POST',

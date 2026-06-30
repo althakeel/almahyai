@@ -21,6 +21,7 @@ import {
   exportMessageToExcel,
   exportTextToPdf,
   exportTextToExcel,
+  downloadAttachment,
 } from '../utils/export';
 import {
   IconDownload,
@@ -224,6 +225,16 @@ const MessageRow = memo(function MessageRow({
               <span className="chat-doc-type">{documentLabel(msg.attachment)}</span>
               <span className="chat-doc-name">{msg.attachment.filename}</span>
             </span>
+            {msg.attachment.data && msg.attachment.mimeType === 'application/pdf' && (
+              <button
+                type="button"
+                className="chat-doc-download-btn"
+                onClick={() => downloadAttachment(msg.attachment!)}
+              >
+                <IconDownload size={14} />
+                <span>Download PDF</span>
+              </button>
+            )}
           </div>
         )}
         {msg.image && (
@@ -705,6 +716,7 @@ export default function ChatPanel({
               role: 'assistant',
               content: result.content!,
               image: result.image ?? null,
+              attachment: result.attachment ?? null,
               createdAt: new Date().toISOString(),
             },
           ];

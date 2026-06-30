@@ -2,7 +2,8 @@ import OpenAI from 'openai';
 import { GoogleGenAI } from '@google/genai';
 import { getPlatformApiKeys, getMessages, addMessage, type MessageImage, type MessageAttachment } from './database';
 import { DEFAULT_CHAT_PROVIDER, DEFAULT_CHAT_MODEL } from './config';
-import { prepareAttachment, isPdfMime, isExcelMime, attachmentForStorage } from './file-content';
+import { prepareAttachment, isPdfMime, isExcelMime, isTextMime, attachmentForStorage } from './file-content';
+import { convertSpreadsheetToPdf } from './excel-to-pdf';
 import {
   multiEngineSearch,
   formatSearchContext,
@@ -321,6 +322,7 @@ export interface ChatResponse {
   content: string;
   messageId: string;
   image?: MessageImage | null;
+  attachment?: MessageAttachment | null;
 }
 
 function isImageGenerationRequest(message: string, history?: HistoryMessage[]): boolean {
@@ -388,6 +390,26 @@ function noFakeImageHint(): string {
     ' IMPORTANT: In text chat you cannot attach or display images. ' +
     'Never write "Here is the image" or claim an image was generated unless the image engine already returned one. ' +
     'If they want a picture, describe the idea briefly and suggest a clear prompt like "Create an image of …".'
+  );
+}
+
+function isSpreadsheetAttachment(attachment: MessageAttachment): boolean {
+  return (
+    isExcelMime(attachment.mimeType) ||
+    (isTextMime(attachment.mimeType) && /\.csv$/i.test(attachment.filename))
+  );
+}
+
+function isExcelToPdfConversionRequest(message: string, attachment?: MessageAttachment | null): boolean {
+  if (!attachment || !isSpreadsheetAttachment(attachment)) return false;
+  const text = message.trim().toLowerCase();
+  if (!/\bpdf\b/.test(text)) return false;
+  return (
+    /\b(convert|export|save|turn|change|make|transform)\b/.test(text) ||
+    /\b(to|into|in)\s+pdf\b/.test(text) ||
+    /\bexcel\b.*\bpdf\b/.test(text) ||
+    /\b(spreadsheet|xlsx|xls|csv)\b.*\bpdf\b/.test(text) ||
+    /\bmin\s+pdf\b/.test(text)
   );
 }
 
@@ -502,6 +524,8 @@ function fileAttachmentHint(attachmentMime?: string): string {
       ' EXCEL EDITING: If they ask to edit, update, fix, add rows/columns, or improve the spreadsheet, output the FULL revised data ' +
       'as markdown table(s) with a header row (| Column | ... |) so they can save it as a new Excel file. ' +
       'Include all sheets if multiple; label each with ## Sheet: Name. Do not say you cannot edit Excel files.';
+    hint +=
+      ' EXCEL TO PDF: If they ask to convert or export the attached spreadsheet to PDF, tell them to say "convert this to PDF" — Almahy AI will convert it automatically. Do not give manual Microsoft Excel steps.';
   }
   return hint;
 }
@@ -554,6 +578,22 @@ export async function sendChatMessage(req: ChatRequest): Promise<ChatResponse> {
   await addMessage(req.conversationId, 'user', userText, req.image ?? null, attachmentStored);
 
   const hasUpload = !!req.image || !!attachment;
+
+  if (attachment && isExcelToPdfConversionRequest(req.message, attachment)) {
+    const { pdfBase64, pdfFilename } = convertSpreadsheetToPdf(
+      attachment.data,
+      attachment.mimeType,
+      attachment.filename
+    );
+    const pdfAttachment: MessageAttachment = {
+      mimeType: 'application/pdf',
+      data: pdfBase64,
+      filename: pdfFilename,
+    };
+    const content = `I've converted "${attachment.filename}" to PDF. Click Download PDF below to save it on your computer.`;
+    const saved = await addMessage(req.conversationId, 'assistant', content, null, pdfAttachment);
+    return { content, messageId: saved.id, attachment: pdfAttachment };
+  }
 
   if (!hasUpload && isConfidentialQuestion(req.message)) {
     const answer = getConfidentialAnswer();

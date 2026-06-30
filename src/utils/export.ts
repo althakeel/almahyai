@@ -1,4 +1,4 @@
-import type { Message } from '../types';
+import type { Message, MessageAttachment } from '../types';
 
 function sanitizeFilename(name: string): string {
   return name.replace(/[^\w\s-]/g, '').trim().slice(0, 60) || 'orion-chat';
@@ -11,6 +11,13 @@ export function downloadBlob(blob: Blob, filename: string): void {
   link.download = filename;
   link.click();
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+export function downloadAttachment(attachment: MessageAttachment): void {
+  const binary = atob(attachment.data);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  downloadBlob(new Blob([bytes], { type: attachment.mimeType }), attachment.filename);
 }
 
 function escHtml(text: string): string {
