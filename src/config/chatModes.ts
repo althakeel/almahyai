@@ -15,7 +15,7 @@ export const CHAT_MODES: ChatModeConfig[] = [
     label: 'Chat',
     icon: '💬',
     description: 'Everyday questions',
-    hint: 'Ask me anything — I\'ll keep it simple and clear',
+    hint: 'Ask me anything — natural, clear answers',
     placeholder: 'Ask me anything…',
   },
   {
@@ -39,7 +39,7 @@ export const CHAT_MODES: ChatModeConfig[] = [
     label: 'Create',
     icon: '✨',
     description: 'Writing & ideas',
-    hint: 'Emails, stories, and creative writing',
+    hint: 'Natural, human-sounding writing and realistic ideas',
     placeholder: 'What should we create together?',
   },
 ];

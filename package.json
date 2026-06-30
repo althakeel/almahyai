@@ -1,9 +1,9 @@
 {
   "name": "orion-ai",
-  "version": "1.4.7",
-  "description": "Orion AI - Lightweight Windows AI Workspace (optimized for 4GB RAM)",
+  "version": "1.5.3",
+  "description": "Almahy AI - All-in-one AI assistant by Al Thakeel",
   "main": "dist-electron/main.js",
-  "author": "Orion AI",
+  "author": "Al Thakeel",
   "license": "MIT",
   "scripts": {
     "dev": "vite",
@@ -34,7 +34,7 @@
   },
   "build": {
     "appId": "com.orion.ai",
-    "productName": "Orion AI",
+    "productName": "Almahy AI",
     "directories": {
       "output": "release"
     },

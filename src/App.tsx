@@ -4,8 +4,6 @@ import type { User } from './types';
 
 import Login from './components/Login';
 
-import GuestWorkspace from './components/GuestWorkspace';
-
 import { subscribeToAuth, firebaseLogout, resolveGoogleRedirect } from './firebase/auth';
 
 import { auth } from './firebase/config';
@@ -16,12 +14,12 @@ const Workspace = lazy(() => import('./components/Workspace'));
 
 const backendUnavailableMessage = import.meta.env.DEV
   ? 'Backend not running. Open a terminal and run: cd backend && npm run dev'
-  : 'Cannot reach Orion AI servers. The cloud server may be offline — ask the administrator to run deploy/setup-server.sh on AWS.';
+  : 'Cannot reach Almahy AI servers. The cloud server may be offline — ask the administrator to update AWS.';
 
-function LoadingFallback({ message = 'Loading Orion AI...' }: { message?: string }) {
+function LoadingFallback({ message = 'Loading Almahy AI...' }: { message?: string }) {
   return (
     <div className="loading-screen">
-      <div className="logo-mark">O</div>
+      <div className="logo-mark">A</div>
       <p>{message}</p>
     </div>
   );
@@ -41,7 +39,6 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [authChecked, setAuthChecked] = useState(false);
   const [authError, setAuthError] = useState('');
-  const [authView, setAuthView] = useState<'guest' | 'login'>('guest');
 
   useEffect(() => {
     resolveGoogleRedirect().catch(() => {});
@@ -62,7 +59,6 @@ export default function App() {
         return;
       }
 
-      setAuthView('login');
       setAuthChecked(true);
       setLoading(true);
 
@@ -126,7 +122,6 @@ export default function App() {
   const handleLogout = async () => {
     await firebaseLogout();
     setUser(null);
-    setAuthView('guest');
   };
 
   const sessionValid = user && auth.currentUser;
@@ -137,16 +132,8 @@ export default function App() {
     mainContent = <Workspace key={auth.currentUser!.uid} user={user} onLogout={handleLogout} />;
   } else if (loading && authChecked) {
     mainContent = <LoadingFallback message="Signing in…" />;
-  } else if (authView === 'login') {
-    mainContent = (
-      <Login
-        authError={authError}
-        onClearError={() => setAuthError('')}
-        onContinueAsGuest={() => setAuthView('guest')}
-      />
-    );
   } else {
-    mainContent = <GuestWorkspace onSignIn={() => setAuthView('login')} />;
+    mainContent = <Login authError={authError} onClearError={() => setAuthError('')} />;
   }
 
   return (

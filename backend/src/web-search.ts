@@ -8,7 +8,7 @@ export interface WebSearchResult {
 const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
 
-const FETCH_TIMEOUT_MS = 9000;
+const FETCH_TIMEOUT_MS = 5000;
 
 function normalizeUrl(href: string, base: string): string {
   try {
@@ -178,12 +178,13 @@ async function searchGoogleCse(query: string): Promise<WebSearchResult[]> {
   }));
 }
 
-export function shouldUseWebSearch(message: string): boolean {
+export function shouldUseWebSearch(message: string, mode?: string): boolean {
   const text = message.trim().toLowerCase();
   if (!text) return false;
   if (isImageGenerationRequest(text)) return false;
 
-  // Skip search only for trivial greetings with no real question
+  if (mode === 'research') return true;
+
   if (
     /^(hi|hello|hey|thanks|thank you|ok|okay|yes|no|bye|yo|good morning|good night|good afternoon|how are you)[!.?\s]*$/i.test(
       text
@@ -192,8 +193,19 @@ export function shouldUseWebSearch(message: string): boolean {
     return false;
   }
 
-  // Search the web for everything else — companies, facts, news, code help, etc.
-  return true;
+  if (
+    /\b(202[3-9]|today|latest|current|news|who is|what is|where is|when did|how much|price|weather|stock|score|review|compare|versus|vs\b|althakeel|al[\s-]?thakeel|almahy|store1920|nexso|velore|armed|gharaam)\b/i.test(
+      text
+    )
+  ) {
+    return true;
+  }
+
+  if (/\b(company|brand|website|official|headquarters|founder|ceo|product launch)\b/i.test(text)) {
+    return true;
+  }
+
+  return text.split(/\s+/).length >= 14;
 }
 
 function isImageGenerationRequest(text: string): boolean {
@@ -213,14 +225,20 @@ export function enhanceSearchQuery(message: string): string {
   return message.trim();
 }
 
-export async function multiEngineSearch(query: string, limit = 8): Promise<WebSearchResult[]> {
+export async function multiEngineSearch(
+  query: string,
+  limit = 8,
+  options?: { fast?: boolean }
+): Promise<WebSearchResult[]> {
   const searchQuery = enhanceSearchQuery(query);
-  const engines = await Promise.allSettled([
-    searchGoogleCse(searchQuery),
-    searchYahoo(searchQuery),
-    searchBing(searchQuery),
-    searchDuckDuckGo(searchQuery),
-  ]);
+  const engines = options?.fast
+    ? await Promise.allSettled([searchDuckDuckGo(searchQuery), searchBing(searchQuery)])
+    : await Promise.allSettled([
+        searchGoogleCse(searchQuery),
+        searchYahoo(searchQuery),
+        searchBing(searchQuery),
+        searchDuckDuckGo(searchQuery),
+      ]);
 
   const merged: WebSearchResult[] = [];
   const seen = new Set<string>();

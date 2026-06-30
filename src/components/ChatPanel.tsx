@@ -60,6 +60,7 @@ interface MessageRowProps {
   onCopyImage: (id: string, image: MessageImage) => void;
   onSaveImage: (image: MessageImage, id: string) => void;
   onShareImage: (id: string, image: MessageImage) => void;
+  onExpandImage: (src: string) => void;
   onExportPdf: (msg: Message) => void;
   onExportExcel: (msg: Message) => void;
   shareLabel: (id: string) => string;
@@ -73,6 +74,7 @@ const MessageRow = memo(function MessageRow({
   onCopyImage,
   onSaveImage,
   onShareImage,
+  onExpandImage,
   onExportPdf,
   onExportExcel,
   shareLabel,
@@ -80,7 +82,7 @@ const MessageRow = memo(function MessageRow({
   return (
     <div className={`chat-row ${msg.role}`}>
       <div className={`chat-avatar ${msg.role}`}>
-        {msg.role === 'user' ? userName[0]?.toUpperCase() : 'O'}
+        {msg.role === 'user' ? userName[0]?.toUpperCase() : 'A'}
       </div>
       <div className="chat-bubble">
         <div className="chat-bubble-header">
@@ -142,13 +144,23 @@ const MessageRow = memo(function MessageRow({
         {msg.image && (
           <div className="chat-image-wrap">
             <div className="chat-image-frame">
-              <img
-                className="chat-image"
-                src={imageSrc(msg.image)}
-                alt="Chat attachment"
-                loading="lazy"
-                decoding="async"
-              />
+              <button
+                type="button"
+                className="chat-image-expand-btn"
+                onClick={() => onExpandImage(imageSrc(msg.image!))}
+                title="Click to enlarge"
+                aria-label="Enlarge image"
+              >
+                <img
+                  className="chat-image"
+                  src={imageSrc(msg.image)}
+                  alt="Chat attachment"
+                  loading="lazy"
+                  decoding="async"
+                  draggable={false}
+                />
+                <span className="chat-image-zoom-hint">Click to enlarge</span>
+              </button>
               <div className="chat-image-badge" title="Image attachment">
                 <IconImage size={14} />
               </div>
@@ -244,6 +256,7 @@ export default function ChatPanel({
   const [sending, setSending] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [copied, setCopied] = useState<CopiedKey>(null);
+  const [lightboxImage, setLightboxImage] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -286,6 +299,19 @@ export default function ChatPanel({
     if (!el || composerDisabled) return;
     el.focus();
   }, [composerDisabled]);
+
+  useEffect(() => {
+    if (!lightboxImage) return;
+    const onKeyDown = (e: globalThis.KeyboardEvent) => {
+      if (e.key === 'Escape') setLightboxImage(null);
+    };
+    document.addEventListener('keydown', onKeyDown);
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      document.body.style.overflow = '';
+    };
+  }, [lightboxImage]);
 
   useEffect(() => {
     const timer = window.setTimeout(focusComposer, 80);
@@ -568,7 +594,7 @@ export default function ChatPanel({
     [copied]
   );
 
-  const exportTitle = conversation.title || 'Orion Chat';
+  const exportTitle = conversation.title || 'Almahy Chat';
 
   const handleExportChatPdf = async () => {
     if (messages.length === 0) return;
@@ -656,7 +682,7 @@ export default function ChatPanel({
             {guestMode ? (
               <>
                 <div className="guest-welcome-badge">No account needed</div>
-                <h2>Ask Orion anything</h2>
+                <h2>Ask Almahy AI anything</h2>
                 <p>
                   You have <strong>{guestRemaining}</strong> of {guestLimit} free messages today.
                   Sign in anytime for unlimited chat, images, and exports.
@@ -687,9 +713,9 @@ export default function ChatPanel({
               </>
             ) : (
               <>
-                <div className="chat-welcome-icon">O</div>
+                <div className="chat-welcome-icon">A</div>
                 <h2>Hi! How can I help you today?</h2>
-                <p>Pick a mode below or tap a suggestion to get started.</p>
+                <p>Chat, learn, build, or create — pick a mode or tap a suggestion below.</p>
                 <QuickPrompts prompts={QUICK_PROMPTS} onSelect={handleQuickPrompt} />
               </>
             )}
@@ -706,6 +732,7 @@ export default function ChatPanel({
             onCopyImage={handleCopyImage}
             onSaveImage={handleSaveImage}
             onShareImage={handleShareImage}
+            onExpandImage={setLightboxImage}
             onExportPdf={handleExportMsgPdf}
             onExportExcel={handleExportMsgExcel}
             shareLabel={shareLabel}
@@ -714,7 +741,7 @@ export default function ChatPanel({
 
         {sending && (
           <div className="chat-row assistant">
-            <div className="chat-avatar assistant">O</div>
+            <div className="chat-avatar assistant">A</div>
             <div className="chat-bubble">
               <p className="typing-label">Agent is thinking…</p>
               <div className="typing-indicator">
@@ -725,6 +752,31 @@ export default function ChatPanel({
         )}
         <div ref={messagesEndRef} />
       </div>
+
+      {lightboxImage && (
+        <div
+          className="image-lightbox"
+          onClick={() => setLightboxImage(null)}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Enlarged image"
+        >
+          <button
+            type="button"
+            className="image-lightbox-close"
+            onClick={() => setLightboxImage(null)}
+            aria-label="Close"
+          >
+            ×
+          </button>
+          <img
+            className="image-lightbox-img"
+            src={lightboxImage}
+            alt="Enlarged view"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
 
       <div className="chat-composer">
         <ChatModeBar mode={chatMode} onChange={setChatMode} disabled={sending} />

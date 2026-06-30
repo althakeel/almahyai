@@ -40,10 +40,9 @@ function getFirebaseErrorMessage(code: string, message?: string): string {
 interface Props {
   authError?: string;
   onClearError?: () => void;
-  onContinueAsGuest?: () => void;
 }
 
-export default function Login({ authError = '', onClearError, onContinueAsGuest }: Props) {
+export default function Login({ authError = '', onClearError }: Props) {
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -117,16 +116,10 @@ export default function Login({ authError = '', onClearError, onContinueAsGuest 
     <div className="auth-container">
       <div className="auth-card">
         <div className="auth-header">
-          <div className="logo-mark">O</div>
+          <div className="logo-mark">A</div>
           <h1>Almahy AI</h1>
-          <p>Sign in for unlimited chat &amp; images</p>
+          <p>Sign in to chat, learn, build, and create</p>
         </div>
-
-        {onContinueAsGuest && (
-          <button type="button" className="btn-guest-link" onClick={onContinueAsGuest}>
-            ← Continue as Guest (20 free messages/day)
-          </button>
-        )}
 
         <div className="auth-tabs">
           <button
@@ -202,24 +195,12 @@ export default function Login({ authError = '', onClearError, onContinueAsGuest 
 
           {serverOnline === false && (
             <p className="error-msg">
-              Orion AI cloud server is offline or not configured yet.
-              Open http://3.111.219.248:3847/api/health in a browser — it must show
-              {` {"ok":true,...} `}
-              before the app can sign in.
+              Almahy AI cloud server is offline. Check your internet or try again later.
             </p>
           )}
 
           {error && <p className="error-msg">{error}</p>}
         </form>
-
-        {onContinueAsGuest && (
-          <p className="auth-guest-note">
-            No account?{' '}
-            <button type="button" className="link-btn" onClick={onContinueAsGuest}>
-              Try 20 free messages without signing in
-            </button>
-          </p>
-        )}
       </div>
     </div>
   );

@@ -37,7 +37,7 @@ export async function shareImage(image: MessageImage): Promise<'shared' | 'copie
   const file = new File([blob], filename, { type: blob.type || image.mimeType });
 
   if (typeof navigator.share === 'function') {
-    const payload: ShareData = { title: 'Orion AI image', files: [file] };
+    const payload: ShareData = { title: 'Almahy AI image', files: [file] };
     if (!navigator.canShare || navigator.canShare(payload)) {
       await navigator.share(payload);
       return 'shared';

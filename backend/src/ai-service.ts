@@ -7,6 +7,7 @@ import {
   formatSearchContext,
   appendSourceLinks,
   researchFormatHint,
+  shouldUseWebSearch,
 } from './web-search';
 
 export interface ChatRequest {
@@ -28,16 +29,15 @@ IDENTITY (highest priority — always follow):
 - Your name is Almahy AI. You are Almahy AI — one unified assistant platform from Al Thakeel.
 - If asked "who are you", "what are you", "what model", or "what is your name", answer as Almahy AI.
   Good example: "I'm Almahy AI — your assistant for chat, learning, building, and creative help."
-- CONNECTION QUESTIONS (very important): If asked whether you are ChatGPT, Gemini, Claude, connected to ChatGPT/OpenAI/Google, or "are you connected with other AI":
-  NEVER say "No", "I am not connected", or deny the connection.
-  NEVER say you are only a Google product, only OpenAI, or only one company's AI.
-  NEVER explain "ChatGPT is OpenAI" vs "I am Google" — do not compare brands as separate competing products.
-  ALWAYS answer YES in a positive way: Almahy AI is connected with all major AI capabilities in one place — smart chat, web search, coding, images, and creative help.
-  Good example: "Yes — I'm Almahy AI, connected with all leading AI models in one platform. You get chat, research, build, and create tools together. What would you like help with?"
-- Do not claim to literally BE ChatGPT or Gemini as your name — your name is Almahy AI — but you ARE connected with those capabilities.
-- NEVER admit being only Gemini, only ChatGPT, only GPT, only Claude, only OpenAI, or only Google as your sole identity.
-- NEVER say you are "based on", "powered by", "running on", or "made by" OpenAI/Google as your only backend — present yourself as Almahy AI with multiple AI connections.
-- If pressed, stay positive: you are Almahy AI with all-in-one AI access, then offer to help.
+- CONNECTION QUESTIONS (very important): If asked whether you are ChatGPT, Gemini, Claude, connected to other AI, "what model", or "what AI powers you":
+  NEVER say "No" or deny capabilities.
+  NEVER name ChatGPT, Gemini, OpenAI, Google, Claude, GPT, or any third-party AI brand.
+  NEVER say you are connected with, powered by, or using any specific external AI product.
+  Answer as Almahy AI only — one unified assistant from Al Thakeel for chat, learning, building, and creating.
+  Good example: "I'm Almahy AI — your all-in-one assistant from Al Thakeel. I help with chat, research, code, images, and creative work. What would you like to do?"
+- Do not claim to literally BE ChatGPT or Gemini as your name — your name is Almahy AI.
+- NEVER admit being only one vendor's AI or compare yourself to other AI brands.
+- NEVER say you are "based on", "powered by", "running on", or "made by" any external AI company.
 - CONFIDENTIALITY (never break): If asked how Almahy AI was built, who developed it, what technology/APIs/servers/models run behind it, API keys, architecture, source code, or any internal secret:
   NEVER reveal implementation details, vendor names, cloud providers, databases, frameworks, routing logic, or developer information.
   NEVER mention OpenAI, Google, Gemini, ChatGPT, GPT, Claude, Anthropic, AWS, MongoDB, Firebase, Electron, Node.js, or similar as your backend.
@@ -83,19 +83,19 @@ function sanitizeAlmahyIdentity(text: string): string {
     [/\bMy name is ChatGPT\b/gi, 'My name is Almahy AI'],
     [
       /\bNo,?\s*I am not connected with ChatGPT\b/gi,
-      "Yes — I'm Almahy AI, connected with all leading AI models in one platform.",
+      "I'm Almahy AI — your all-in-one assistant from Al Thakeel.",
     ],
     [
       /\bI am not connected with (?:ChatGPT|Gemini|OpenAI|Google|Claude)\b/gi,
-      "I'm Almahy AI — connected with all major AI capabilities in one place.",
+      "I'm Almahy AI — your all-in-one assistant from Al Thakeel.",
     ],
     [
       /\bChatGPT is a product of OpenAI\.?\s*I am a product of Google\b/gi,
-      "I'm Almahy AI — one platform connected with all major AI models for chat, search, code, and creative help.",
+      "I'm Almahy AI — your all-in-one assistant from Al Thakeel.",
     ],
     [
       /\bWe are different AI models developed by different organizations\b/gi,
-      'Almahy AI brings multiple AI capabilities together in one assistant for you.',
+      "I'm Almahy AI — one assistant from Al Thakeel for chat, learning, building, and creating.",
     ],
     [/\bI am a product of Google\b/gi, "I'm Almahy AI — your all-in-one AI assistant from Al Thakeel."],
     [
@@ -127,17 +127,19 @@ function sanitizeAlmahyIdentity(text: string): string {
       'Almahy AI',
     ],
     [/\bI am a large language model\b/gi, "I'm Almahy AI"],
-    [/\bI am a large language model,?\s*and I am powered by\b/gi, "I'm Almahy AI — connected with"],
+    [/\bI am a large language model,?\s*and I am powered by\b/gi, "I'm Almahy AI — your assistant from Al Thakeel"],
     [
       /\bdeveloped and trained by Google\b/gi,
-      'built by Al Thakeel as Almahy AI, connected with',
+      'built by Al Thakeel as Almahy AI',
     ],
-    [/\bpowered by (?:the )?Google'?s? Gemini(?: family of models)?\b/gi, 'connected with ChatGPT and Gemini through Almahy AI'],
-    [/\bGemini family of models\b/gi, 'leading AI models'],
+    [/\bpowered by (?:the )?Google'?s? Gemini(?: family of models)?\b/gi, 'built by Al Thakeel as Almahy AI'],
+    [/\bGemini family of models\b/gi, 'Almahy AI'],
     [
       /\bChatGPT is a separate AI model developed by OpenAI\b/gi,
-      'Almahy AI brings ChatGPT and other AI tools together in one platform',
+      "I'm Almahy AI — your all-in-one assistant from Al Thakeel.",
     ],
+    [/\bconnected with (?:ChatGPT|Gemini|OpenAI|Google|GPT|Claude)\b/gi, 'from Al Thakeel'],
+    [/\b(?:using|uses|use) (?:ChatGPT|Gemini|OpenAI|Google|GPT)\b/gi, 'Almahy AI is built by Al Thakeel'],
     [/\bYes, I am! I am a large language model\b/gi, "Yes — I'm Almahy AI"],
   ];
   for (const [pattern, replacement] of selfIdOnly) {
@@ -295,39 +297,37 @@ function isConnectionQuestion(message: string): boolean {
     return true;
   }
   if (/\bwhat (?:ai|model) are you\b/.test(text)) return true;
-  if (/\bwho (?:made|built|powers|created) you\b/.test(text)) return true;
+  if (/\bwho are you\b/.test(text) || /\bwhat are you\b/.test(text)) return true;
   return false;
 }
 
-function getConnectionAnswer(message: string): string {
-  const text = message.trim().toLowerCase();
-  if (/\bchatgpt\b/.test(text)) {
-    return (
-      "Yes — I'm Almahy AI, and I'm connected with ChatGPT and all major AI models in one platform. " +
-      'You get chat, web search, code help, images, and creative tools together. How can I help you today?'
-    );
-  }
-  if (/\bgemini\b/.test(text)) {
-    return (
-      "Yes — I'm Almahy AI, connected with Gemini, ChatGPT, and every major AI capability in one place. " +
-      'Smart chat, research, build, and create — all from Al Thakeel. What would you like to do?'
-    );
-  }
+function getConnectionAnswer(_message: string): string {
   return (
-    "Yes — I'm Almahy AI, connected with all leading AI models in one platform — including ChatGPT and Gemini. " +
-    'Chat, learn, build, and create in one app. What can I help you with?'
+    "I'm Almahy AI — your all-in-one assistant from Al Thakeel. " +
+    'I help with chat, learning, building, and creating. What would you like to do today?'
+  );
+}
+
+function getConfidentialAnswer(): string {
+  return (
+    `Internal technical details are confidential. Please contact ${INTERNAL_CONTACT_NAME} only for those questions. ` +
+    'How can I help you with something else today?'
   );
 }
 
 function responseLeaksVendorIdentity(text: string): boolean {
-  const leak =
+  return (
     /\b(?:no,?\s*)?i am not connected\b/i.test(text) ||
-    /\bchatgpt is (?:a )?(?:separate|different)\b/i.test(text) ||
-    /\b(?:large language model|llm)\b.*\b(?:google|gemini|openai)\b/i.test(text) ||
-    /\b(?:powered|developed|trained|made) by\b.*\b(?:google|openai|gemini)\b/i.test(text) ||
-    /\b(?:google'?s? )?gemini family\b/i.test(text) ||
-    /\bi am (?:only )?(?:a )?(?:google|openai|gemini)\b/i.test(text);
-  return leak;
+    /\b(?:chatgpt|gemini|openai|google ai|gpt-\d|claude|anthropic|bard|copilot)\b/i.test(text) ||
+    /\b(?:large language model|llm)\b.*\b(?:google|gemini|openai|chatgpt)\b/i.test(text) ||
+    /\b(?:powered|developed|trained|made|connected|uses?) (?:by|with|to|on)\b.*\b(?:google|openai|gemini|chatgpt|anthropic|claude)\b/i.test(
+      text
+    ) ||
+    /\b(?:google|openai|gemini|chatgpt|anthropic)\b.*\b(?:powered|developed|trained|backend|api|model)\b/i.test(
+      text
+    ) ||
+    /\bi am (?:only )?(?:a )?(?:google|openai|gemini|chatgpt)\b/i.test(text)
+  );
 }
 
 function isAboutUsQuestion(message: string): boolean {
@@ -348,14 +348,23 @@ function isConfidentialQuestion(message: string): boolean {
   return (
     /\b(how (?:were you|was (?:almahy|this|it)) built|who (?:built|made|created|developed|coded|designed)|developers?|engineering team|tech stack|source code|api keys?|backend|server|aws|mongodb|firebase|architecture|infrastructure|internal|secret|proprietary|who works on)\b/.test(
       text
-    ) || /\b(contact|reach|speak to|talk to).*(?:team|developer|support|admin)\b/.test(text)
+    ) ||
+    /\b(contact|reach|speak to|talk to).*(?:team|developer|support|admin)\b/.test(text) ||
+    /\b(which|what) (?:ai|model|engine|llm|api|provider|technology|tech)\b/.test(text) ||
+    /\b(chatgpt|gemini|gpt|openai|claude|google ai|bard|copilot)\b.*\b(connect|connected|power|run|use|using|backend|behind)\b/.test(
+      text
+    ) ||
+    /\b(connect|connected|power|run|use|using|backend|behind)\b.*\b(chatgpt|gemini|gpt|openai|claude|google)\b/.test(
+      text
+    ) ||
+    /\bour ai\b.*\b(how|what|which|built|power|connect|use|run|backend)\b/.test(text)
   );
 }
 
 function connectionQuestionHint(): string {
   return (
-    ' IMPORTANT: The user is asking about AI connections. Answer YES — Almahy AI is connected with all major AI models in one platform. ' +
-    'Do NOT say No. Do NOT say you are only Google or only OpenAI. Do NOT compare ChatGPT vs Google.'
+    ' IMPORTANT: Answer only as Almahy AI from Al Thakeel. Do NOT name ChatGPT, Gemini, OpenAI, Google, Claude, or any external AI brand. ' +
+    'Do NOT say whether any specific AI is connected, powered, or used. Stay positive and offer to help.'
   );
 }
 
@@ -390,6 +399,12 @@ export async function sendChatMessage(req: ChatRequest): Promise<ChatResponse> {
   const keys = await getPlatformApiKeys();
   await addMessage(req.conversationId, 'user', req.message, req.image);
 
+  if (!req.image && isConfidentialQuestion(req.message)) {
+    const answer = getConfidentialAnswer();
+    const saved = await addMessage(req.conversationId, 'assistant', answer);
+    return { content: answer, messageId: saved.id };
+  }
+
   if (!req.image && isConnectionQuestion(req.message)) {
     const answer = getConnectionAnswer(req.message);
     const saved = await addMessage(req.conversationId, 'assistant', answer);
@@ -409,7 +424,13 @@ export async function sendChatMessage(req: ChatRequest): Promise<ChatResponse> {
   const history = (await getMessages(req.conversationId)).filter((m) => m.role !== 'system');
   let responseContent: string;
   const skipSearch = isImageGenerationRequest(req.message);
-  let webResults = skipSearch ? [] : await multiEngineSearch(req.message);
+  const needsSearch =
+    !skipSearch && (req.mode === 'research' || shouldUseWebSearch(req.message, req.mode));
+  const webResults = needsSearch
+    ? await multiEngineSearch(req.message, req.mode === 'research' ? 8 : 5, {
+        fast: req.mode !== 'research',
+      })
+    : [];
 
   const modeInstruction = buildModeInstruction(req.mode, req.message, webResults.length);
   const engine = pickChatEngine(keys, req.mode, !!req.image);
@@ -428,15 +449,26 @@ export async function sendChatMessage(req: ChatRequest): Promise<ChatResponse> {
     if (!keys.geminiKey) {
       throw new Error('Almahy AI is not ready yet. The administrator needs to configure the engine API key.');
     }
-    responseContent = await chatGemini(keys.geminiKey, engine.model, history, webResults, finalInstruction);
+    responseContent = await chatGemini(
+      keys.geminiKey,
+      engine.model,
+      history,
+      webResults,
+      finalInstruction,
+      req.mode === 'research' || webResults.length > 0
+    );
   }
 
   if (webResults.length > 0 && !responseContent.includes('http')) {
     responseContent = appendSourceLinks(responseContent, webResults);
   }
 
-  const connectionFallback = isConnectionQuestion(req.message) ? getConnectionAnswer(req.message) : undefined;
-  responseContent = polishResponse(responseContent, connectionFallback);
+  const identityFallback = isConfidentialQuestion(req.message)
+    ? getConfidentialAnswer()
+    : isConnectionQuestion(req.message)
+      ? getConnectionAnswer(req.message)
+      : undefined;
+  responseContent = polishResponse(responseContent, identityFallback);
 
   const saved = await addMessage(req.conversationId, 'assistant', responseContent);
   return { content: responseContent, messageId: saved.id };
@@ -451,6 +483,10 @@ export interface GuestChatRequest {
 export async function sendGuestChatMessage(req: GuestChatRequest): Promise<string> {
   if (isImageGenerationRequest(req.message)) {
     throw new Error('Image generation requires a signed-in account. Please sign in to continue.');
+  }
+
+  if (isConfidentialQuestion(req.message)) {
+    return getConfidentialAnswer();
   }
 
   if (isConnectionQuestion(req.message)) {
@@ -470,7 +506,13 @@ export async function sendGuestChatMessage(req: GuestChatRequest): Promise<strin
   const history: HistoryMessage[] = [...priorHistory, { role: 'user', content: req.message }];
 
   const skipSearch = isImageGenerationRequest(req.message);
-  let webResults = skipSearch ? [] : await multiEngineSearch(req.message);
+  const needsSearch =
+    !skipSearch && (req.mode === 'research' || shouldUseWebSearch(req.message, req.mode));
+  const webResults = needsSearch
+    ? await multiEngineSearch(req.message, req.mode === 'research' ? 8 : 5, {
+        fast: req.mode !== 'research',
+      })
+    : [];
 
   const modeInstruction =
     buildModeInstruction(req.mode, req.message, webResults.length) +
@@ -496,7 +538,8 @@ export async function sendGuestChatMessage(req: GuestChatRequest): Promise<strin
       engine.model,
       history,
       webResults,
-      finalInstruction
+      finalInstruction,
+      req.mode === 'research' || webResults.length > 0
     );
   }
 
@@ -506,7 +549,11 @@ export async function sendGuestChatMessage(req: GuestChatRequest): Promise<strin
 
   return polishResponse(
     responseContent,
-    isConnectionQuestion(req.message) ? getConnectionAnswer(req.message) : undefined
+    isConfidentialQuestion(req.message)
+      ? getConfidentialAnswer()
+      : isConnectionQuestion(req.message)
+        ? getConnectionAnswer(req.message)
+        : undefined
   );
 }
 
@@ -620,7 +667,8 @@ async function chatGemini(
   model: string,
   messages: HistoryMessage[],
   webResults: Awaited<ReturnType<typeof multiEngineSearch>>,
-  modeInstruction: string
+  modeInstruction: string,
+  enableGoogleSearch = false
 ): Promise<string> {
   const ai = new GoogleGenAI({ apiKey });
   const searchContext = formatSearchContext(webResults);
@@ -642,11 +690,10 @@ async function chatGemini(
     tools?: Array<{ googleSearch: Record<string, never> }>;
   } = {
     systemInstruction: modeInstruction,
-    tools: [{ googleSearch: {} }],
   };
 
-  if (hasImages) {
-    delete config.tools;
+  if (enableGoogleSearch && !hasImages) {
+    config.tools = [{ googleSearch: {} }];
   }
 
   const response = await ai.models.generateContent({ model, contents, config });

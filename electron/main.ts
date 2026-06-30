@@ -20,7 +20,7 @@ async function createWindow(): Promise<void> {
     height: 700,
     minWidth: 800,
     minHeight: 520,
-    title: 'Orion AI',
+    title: 'Almahy AI',
     show: false,
     webPreferences: {
       contextIsolation: true,
