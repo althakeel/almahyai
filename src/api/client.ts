@@ -157,6 +157,14 @@ export const orionApi = {
       apiFetch<{ success: boolean }>(`/conversations/${conversationId}`, {
         method: 'DELETE',
       }),
+    clearMessages: (conversationId: string) =>
+      apiFetch<{ success: boolean }>(`/conversations/${conversationId}/messages`, {
+        method: 'DELETE',
+      }),
+    deleteAll: (workspaceId: string) =>
+      apiFetch<{ success: boolean }>(`/workspaces/${workspaceId}/conversations`, {
+        method: 'DELETE',
+      }),
   },
   messages: {
     list: (conversationId: string) => apiFetch<Message[]>(`/conversations/${conversationId}/messages`),

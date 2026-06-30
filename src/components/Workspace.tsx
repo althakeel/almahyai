@@ -127,7 +127,10 @@ export default function Workspace({ user, onLogout }: Props) {
     }
   }, [ensureWorkspace, createNewChat]);
 
-  const handleDeleteConversation = async (id: string) => {
+  const handleDeleteConversation = async (id: string, title?: string) => {
+    const label = title ? `"${title}"` : 'this chat';
+    if (!window.confirm(`Delete ${label}? This cannot be undone.`)) return;
+
     try {
       await orionApi.conversation.delete(id);
       const remaining = conversations.filter((c) => c.id !== id);
@@ -144,6 +147,28 @@ export default function Workspace({ user, onLogout }: Props) {
       }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Could not delete chat');
+    }
+  };
+
+  const handleDeleteAllHistory = async () => {
+    if (conversations.length === 0) return;
+    if (
+      !window.confirm(
+        `Delete all ${conversations.length} chats? This permanently removes your entire chat history.`
+      )
+    ) {
+      return;
+    }
+
+    try {
+      const workspace = await ensureWorkspace();
+      await orionApi.conversation.deleteAll(workspace.id);
+      setConversations([]);
+      setActiveConversation(null);
+      await createNewChat(workspace);
+      setError('');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Could not delete history');
     }
   };
 
@@ -205,27 +230,42 @@ export default function Workspace({ user, onLogout }: Props) {
             </p>
           )}
           {filteredConversations.map((conv) => (
-            <button
-              type="button"
+            <div
               key={conv.id}
-              className={`conversation-item ${activeConversation?.id === conv.id && view === 'chat' ? 'active' : ''}`}
-              onClick={() => {
-                setActiveConversation(conv);
-                setView('chat');
-                setError('');
-              }}
-              onContextMenu={(e) => {
-                e.preventDefault();
-                if (window.confirm(`Delete "${conv.title}"?`)) {
-                  handleDeleteConversation(conv.id);
-                }
-              }}
+              className={`conversation-row ${activeConversation?.id === conv.id && view === 'chat' ? 'active' : ''}`}
             >
-              <span className="chat-icon">💬</span>
-              <span className="title">{conv.title}</span>
-            </button>
+              <button
+                type="button"
+                className="conversation-item"
+                onClick={() => {
+                  setActiveConversation(conv);
+                  setView('chat');
+                  setError('');
+                }}
+              >
+                <span className="chat-icon">💬</span>
+                <span className="title">{conv.title}</span>
+              </button>
+              <button
+                type="button"
+                className="conversation-delete"
+                title={`Delete "${conv.title}"`}
+                aria-label={`Delete ${conv.title}`}
+                onClick={() => handleDeleteConversation(conv.id, conv.title)}
+              >
+                ×
+              </button>
+            </div>
           ))}
         </div>
+
+        {conversations.length > 0 && (
+          <div className="sidebar-history-actions">
+            <button type="button" className="sidebar-history-btn danger" onClick={handleDeleteAllHistory}>
+              Delete all history
+            </button>
+          </div>
+        )}
 
         <div className="sidebar-bottom">
           {user.isAdmin && (
@@ -308,6 +348,12 @@ export default function Workspace({ user, onLogout }: Props) {
                 prev.map((c) => (c.id === activeConversation.id ? { ...c, title } : c))
               );
               setActiveConversation({ ...activeConversation, title });
+            }}
+            onConversationCleared={() => {
+              setConversations((prev) =>
+                prev.map((c) => (c.id === activeConversation.id ? { ...c, title: 'New Chat' } : c))
+              );
+              setActiveConversation({ ...activeConversation, title: 'New Chat' });
             }}
           />
         ) : (

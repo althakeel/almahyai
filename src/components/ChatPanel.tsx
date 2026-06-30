@@ -116,6 +116,7 @@ interface Props {
   onGuestRemainingChange?: (remaining: number) => void;
   onSignInRequired?: () => void;
   onTitleUpdate: (title: string) => void;
+  onConversationCleared?: () => void;
 }
 
 function imageSrc(image: MessageImage): string {
@@ -328,6 +329,7 @@ export default function ChatPanel({
   onGuestRemainingChange,
   onSignInRequired,
   onTitleUpdate,
+  onConversationCleared,
 }: Props) {
   const [chatMode, setChatMode] = useState<ChatMode>('general');
   const [messages, setMessages] = useState<Message[]>([]);
@@ -832,6 +834,22 @@ export default function ChatPanel({
     }
   };
 
+  const handleClearChat = async () => {
+    if (messages.length === 0 || sending) return;
+    if (!window.confirm('Clear all messages in this chat? The chat will stay in your history but empty.')) {
+      return;
+    }
+
+    try {
+      await orionApi.conversation.clearMessages(conversation.id);
+      messagesCache.current.set(conversation.id, []);
+      setMessages([]);
+      onConversationCleared?.();
+    } catch {
+      alert('Could not clear chat. Try again.');
+    }
+  };
+
   const handleExportMsgPdf = useCallback(
     async (msg: Message) => {
       try {
@@ -882,6 +900,15 @@ export default function ChatPanel({
       )}
       {messages.length > 0 && (
         <div className="chat-export-bar">
+          <button
+            type="button"
+            className="chat-export-btn compact danger"
+            onClick={handleClearChat}
+            disabled={sending}
+            title="Clear all messages in this chat"
+          >
+            <span>Clear chat</span>
+          </button>
           <button
             type="button"
             className="chat-export-btn compact"

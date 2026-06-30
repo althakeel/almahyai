@@ -382,6 +382,23 @@ export async function deleteConversation(conversationId: string): Promise<void> 
   await conversations().deleteOne({ _id: conversationId });
 }
 
+export async function clearConversationMessages(conversationId: string): Promise<void> {
+  await messages().deleteMany({ conversationId });
+  const now = new Date().toISOString();
+  await conversations().updateOne(
+    { _id: conversationId },
+    { $set: { title: 'New Chat', updatedAt: now } }
+  );
+}
+
+export async function deleteAllConversations(workspaceId: string): Promise<void> {
+  const rows = await conversations().find({ workspaceId }).toArray();
+  for (const row of rows) {
+    await messages().deleteMany({ conversationId: row._id });
+  }
+  await conversations().deleteMany({ workspaceId });
+}
+
 export async function getMessages(conversationId: string): Promise<Message[]> {
   const rows = await messages().find({ conversationId }).sort({ createdAt: 1 }).toArray();
   return rows.map((r) => ({

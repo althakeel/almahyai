@@ -635,28 +635,78 @@ input, textarea, select {
   padding: 4px 8px;
 }
 
+.conversation-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-bottom: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.conversation-row:hover .conversation-delete,
+.conversation-row.active .conversation-delete {
+  opacity: 1;
+}
+
+.conversation-row.active {
+  background: var(--bg-tertiary);
+}
+
 .conversation-item {
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 12px;
+  padding: 10px 8px 10px 12px;
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-secondary);
   font-size: 14px;
   text-align: left;
-  transition: background 0.15s;
-  margin-bottom: 2px;
+  transition: background 0.15s, color 0.15s;
+}
+
+.conversation-delete {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  margin-right: 4px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 18px;
+  line-height: 1;
+  opacity: 0;
+  transition: opacity 0.15s, background 0.15s, color 0.15s;
+}
+
+.conversation-delete:hover {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+}
+
+.conversation-row:hover .conversation-item,
+.conversation-row.active .conversation-item {
+  color: var(--text-primary);
+}
+
+.conversation-row:hover {
+  background: var(--bg-hover);
+}
+
+.conversation-row.active:hover {
+  background: var(--bg-tertiary);
 }
 
 .conversation-item:hover {
-  background: var(--bg-hover);
+  background: transparent;
   color: var(--text-primary);
 }
 
 .conversation-item.active {
-  background: var(--bg-tertiary);
+  background: transparent;
   color: var(--text-primary);
 }
 
@@ -670,6 +720,45 @@ input, textarea, select {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.sidebar-history-actions {
+  padding: 8px 12px 4px;
+  border-top: 1px solid var(--border);
+}
+
+.sidebar-history-btn {
+  width: 100%;
+  padding: 9px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  text-align: left;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.sidebar-history-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.sidebar-history-btn.danger:hover {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.35);
+  color: #ef4444;
+}
+
+.chat-export-btn.danger {
+  color: #ef4444;
+  border-color: rgba(239, 68, 68, 0.25);
+  margin-right: auto;
+}
+
+.chat-export-btn.danger:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.4);
 }
 
 .sidebar-bottom {

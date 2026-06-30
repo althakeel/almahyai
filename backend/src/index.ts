@@ -13,6 +13,8 @@ import {
   createConversation,
   updateConversationTitle,
   deleteConversation,
+  clearConversationMessages,
+  deleteAllConversations,
   getMessages,
 } from './database';
 import { sendChatMessage, sendGuestChatMessage, testOpenAIKey, testGeminiKey, OPENAI_MODELS, GEMINI_MODELS } from './ai-service';
@@ -191,6 +193,16 @@ app.patch('/api/conversations/:id', requireAuth, async (req, res) => {
 
 app.delete('/api/conversations/:id', requireAuth, async (req, res) => {
   await deleteConversation(routeParam(req.params.id));
+  res.json({ success: true });
+});
+
+app.delete('/api/conversations/:id/messages', requireAuth, async (req, res) => {
+  await clearConversationMessages(routeParam(req.params.id));
+  res.json({ success: true });
+});
+
+app.delete('/api/workspaces/:id/conversations', requireAuth, async (req, res) => {
+  await deleteAllConversations(routeParam(req.params.id));
   res.json({ success: true });
 });
 
