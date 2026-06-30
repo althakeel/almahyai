@@ -25,16 +25,24 @@ export interface Conversation {
   updatedAt: string;
 }
 
+export interface MessageImage {
+  mimeType: string;
+  data: string;
+}
+
+export interface MessageAttachment {
+  mimeType: string;
+  data: string;
+  filename: string;
+  extractedText?: string;
+}
+
 export interface Message {
   id: string;
   conversationId: string;
   role: 'user' | 'assistant' | 'system';
   content: string;
   image?: MessageImage | null;
+  attachment?: MessageAttachment | null;
   createdAt: string;
-}
-
-export interface MessageImage {
-  mimeType: string;
-  data: string;
 }

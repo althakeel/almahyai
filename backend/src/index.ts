@@ -101,10 +101,10 @@ app.post('/api/guest/chat', async (req, res) => {
       return;
     }
 
-    if (req.body.image) {
+    if (req.body.image || req.body.attachment) {
       res.status(403).json({
         success: false,
-        error: 'Image upload requires a signed-in account. Please sign in to attach or generate images.',
+        error: 'File upload requires a signed-in account. Please sign in to attach images, PDF, or Excel files.',
       });
       return;
     }
@@ -200,7 +200,7 @@ app.get('/api/conversations/:id/messages', requireAuth, async (req, res) => {
 
 app.post('/api/conversations/:id/chat', requireAuth, async (req, res) => {
   try {
-    const { message, image, mode } = req.body;
+    const { message, image, attachment, mode } = req.body;
     const result = await sendChatMessage({
       userId: req.authUser!.uid,
       conversationId: routeParam(req.params.id),
@@ -208,6 +208,7 @@ app.post('/api/conversations/:id/chat', requireAuth, async (req, res) => {
       provider: 'gemini',
       model: DEFAULT_CHAT_MODEL,
       image: image ?? null,
+      attachment: attachment ?? null,
       mode: mode ?? 'general',
     });
     res.json({ success: true, ...result });

@@ -1,5 +1,5 @@
 import { waitForAuthUser } from '../firebase/auth';
-import type { User, Workspace, Conversation, Message, MessageImage, ChatMode } from '../types';
+import type { User, Workspace, Conversation, Message, MessageImage, MessageAttachment, ChatMode } from '../types';
 
 /** Local dev uses Vite proxy; packaged EXE talks to AWS backend on port 3847. */
 const API_BASE = import.meta.env.DEV
@@ -168,13 +168,21 @@ export const orionApi = {
       provider: 'openai' | 'gemini',
       model: string,
       image?: MessageImage | null,
-      mode?: ChatMode
+      mode?: ChatMode,
+      attachment?: MessageAttachment | null
     ) =>
       apiFetch<{ success: boolean; content?: string; messageId?: string; image?: MessageImage | null; error?: string }>(
         `/conversations/${conversationId}/chat`,
         {
           method: 'POST',
-          body: JSON.stringify({ message, provider, model, image: image ?? null, mode: mode ?? 'general' }),
+          body: JSON.stringify({
+            message,
+            provider,
+            model,
+            image: image ?? null,
+            attachment: attachment ?? null,
+            mode: mode ?? 'general',
+          }),
         }
       ),
   },

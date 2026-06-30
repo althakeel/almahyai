@@ -41,18 +41,26 @@ export interface Conversation {
   updatedAt: string;
 }
 
+export interface MessageImage {
+  mimeType: string;
+  data: string;
+}
+
+export interface MessageAttachment {
+  mimeType: string;
+  data: string;
+  filename: string;
+  extractedText?: string;
+}
+
 export interface Message {
   id: string;
   conversationId: string;
   role: 'user' | 'assistant' | 'system';
   content: string;
   image?: MessageImage | null;
+  attachment?: MessageAttachment | null;
   createdAt: string;
-}
-
-export interface MessageImage {
-  mimeType: string;
-  data: string;
 }
 
 export interface ApiKeys {
@@ -382,6 +390,7 @@ export async function getMessages(conversationId: string): Promise<Message[]> {
     role: r.role as 'user' | 'assistant' | 'system',
     content: r.content as string,
     image: (r.image as MessageImage | undefined) ?? null,
+    attachment: (r.attachment as MessageAttachment | undefined) ?? null,
     createdAt: r.createdAt as string,
   }));
 }
@@ -390,7 +399,8 @@ export async function addMessage(
   conversationId: string,
   role: 'user' | 'assistant' | 'system',
   content: string,
-  image?: MessageImage | null
+  image?: MessageImage | null,
+  attachment?: MessageAttachment | null
 ): Promise<Message> {
   const id = uuidv4();
   const now = new Date().toISOString();
@@ -400,9 +410,19 @@ export async function addMessage(
     content: string;
     createdAt: string;
     image?: MessageImage;
+    attachment?: MessageAttachment;
   } = { _id: id, conversationId, role, content, createdAt: now };
   if (image) doc.image = image;
+  if (attachment) doc.attachment = attachment;
   await messages().insertOne(doc);
   await conversations().updateOne({ _id: conversationId }, { $set: { updatedAt: now } });
-  return { id, conversationId, role, content, image: image ?? null, createdAt: now };
+  return {
+    id,
+    conversationId,
+    role,
+    content,
+    image: image ?? null,
+    attachment: attachment ?? null,
+    createdAt: now,
+  };
 }

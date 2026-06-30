@@ -1,7 +1,8 @@
 import OpenAI from 'openai';
 import { GoogleGenAI } from '@google/genai';
-import { getPlatformApiKeys, getMessages, addMessage, type MessageImage } from './database';
+import { getPlatformApiKeys, getMessages, addMessage, type MessageImage, type MessageAttachment } from './database';
 import { DEFAULT_CHAT_PROVIDER, DEFAULT_CHAT_MODEL } from './config';
+import { prepareAttachment, isPdfMime } from './file-content';
 import {
   multiEngineSearch,
   formatSearchContext,
@@ -17,6 +18,7 @@ export interface ChatRequest {
   provider: 'openai' | 'gemini';
   model: string;
   image?: MessageImage | null;
+  attachment?: MessageAttachment | null;
   mode?: ChatMode;
 }
 
@@ -229,13 +231,13 @@ type EngineKeys = { openaiKey: string | null; geminiKey: string | null };
 export function pickChatEngine(
   keys: EngineKeys,
   mode?: ChatMode,
-  hasImage?: boolean
+  hasImage?: boolean,
+  hasDocument?: boolean
 ): { provider: 'openai' | 'gemini'; model: string } {
   const hasOpenai = !!keys.openaiKey;
   const hasGemini = !!keys.geminiKey;
 
-  // Images and factual chat always use Gemini first (web search + Google grounding).
-  if (hasImage && hasGemini) {
+  if ((hasImage || hasDocument) && hasGemini) {
     return { provider: 'gemini', model: DEFAULT_CHAT_MODEL };
   }
 
@@ -269,7 +271,30 @@ type HistoryMessage = {
   role: string;
   content: string;
   image?: MessageImage | null;
+  attachment?: MessageAttachment | null;
 };
+
+function defaultUploadPrompt(
+  image?: MessageImage | null,
+  attachment?: MessageAttachment | null
+): string {
+  if (attachment?.filename) {
+    return `Please analyze the attached file "${attachment.filename}".`;
+  }
+  if (image) return 'Describe this image.';
+  return '';
+}
+
+function enrichMessageContent(message: HistoryMessage): string {
+  let content = message.content.trim();
+  if (!content) {
+    content = defaultUploadPrompt(message.image, message.attachment);
+  }
+  if (message.attachment?.extractedText) {
+    content = `${content}\n\n${message.attachment.extractedText}`.trim();
+  }
+  return content;
+}
 
 export interface ChatResponse {
   content: string;
@@ -397,21 +422,30 @@ function buildModeInstruction(mode: ChatMode | undefined, message: string, webRe
 
 export async function sendChatMessage(req: ChatRequest): Promise<ChatResponse> {
   const keys = await getPlatformApiKeys();
-  await addMessage(req.conversationId, 'user', req.message, req.image);
 
-  if (!req.image && isConfidentialQuestion(req.message)) {
+  let attachment = req.attachment ?? null;
+  if (attachment) {
+    attachment = await prepareAttachment(attachment);
+  }
+
+  const userText = req.message.trim() || defaultUploadPrompt(req.image, attachment);
+  await addMessage(req.conversationId, 'user', userText, req.image ?? null, attachment);
+
+  const hasUpload = !!req.image || !!attachment;
+
+  if (!hasUpload && isConfidentialQuestion(req.message)) {
     const answer = getConfidentialAnswer();
     const saved = await addMessage(req.conversationId, 'assistant', answer);
     return { content: answer, messageId: saved.id };
   }
 
-  if (!req.image && isConnectionQuestion(req.message)) {
+  if (!hasUpload && isConnectionQuestion(req.message)) {
     const answer = getConnectionAnswer(req.message);
     const saved = await addMessage(req.conversationId, 'assistant', answer);
     return { content: answer, messageId: saved.id };
   }
 
-  if (req.provider === 'gemini' && !req.image && isImageGenerationRequest(req.message)) {
+  if (req.provider === 'gemini' && !hasUpload && isImageGenerationRequest(req.message)) {
     if (!keys.geminiKey) {
       throw new Error('Almahy AI is not ready yet. The administrator needs to configure the engine API key.');
     }
@@ -432,14 +466,14 @@ export async function sendChatMessage(req: ChatRequest): Promise<ChatResponse> {
       })
     : [];
 
-  const modeInstruction = buildModeInstruction(req.mode, req.message, webResults.length);
-  const engine = pickChatEngine(keys, req.mode, !!req.image);
+  const modeInstruction = buildModeInstruction(req.mode, userText, webResults.length);
+  const engine = pickChatEngine(keys, req.mode, !!req.image, !!attachment);
   const finalInstruction =
     engine.provider === 'gemini' ? modeInstruction + geminiAccuracyHint() : modeInstruction;
 
   if (engine.provider === 'openai') {
     if (req.image) {
-      throw new Error('Image upload requires a signed-in Almahy AI account.');
+      throw new Error('Image upload is handled by Almahy AI vision. Switch to Chat mode or remove the image.');
     }
     if (!keys.openaiKey) {
       throw new Error('Almahy AI is not ready yet. The administrator needs to configure the engine API key.');
@@ -626,9 +660,9 @@ async function chatOpenAI(
   const client = new OpenAI({ apiKey });
   const searchContext = formatSearchContext(webResults);
   const mapped = messages.map((m, index) => {
-    let content = m.content;
+    let content = enrichMessageContent(m);
     if (searchContext && index === messages.length - 1 && m.role === 'user') {
-      content = `${searchContext}\n\nUser question:\n${m.content}`;
+      content = `${searchContext}\n\nUser question:\n${content}`;
     }
     return {
       role: m.role as 'user' | 'assistant' | 'system',
@@ -653,11 +687,20 @@ function geminiParts(message: HistoryMessage) {
       },
     });
   }
-  if (message.content.trim()) {
-    parts.push({ text: message.content });
+  if (message.attachment && isPdfMime(message.attachment.mimeType)) {
+    parts.push({
+      inlineData: {
+        mimeType: 'application/pdf',
+        data: message.attachment.data,
+      },
+    });
+  }
+  const text = enrichMessageContent(message);
+  if (text) {
+    parts.push({ text });
   }
   if (parts.length === 0) {
-    parts.push({ text: 'Describe this image.' });
+    parts.push({ text: 'Please analyze the attached file.' });
   }
   return parts;
 }
@@ -672,7 +715,7 @@ async function chatGemini(
 ): Promise<string> {
   const ai = new GoogleGenAI({ apiKey });
   const searchContext = formatSearchContext(webResults);
-  const hasImages = messages.some((m) => m.image);
+  const hasMedia = messages.some((m) => m.image || m.attachment);
 
   const contents = messages.map((m, index) => {
     const parts = geminiParts(m);
@@ -692,7 +735,7 @@ async function chatGemini(
     systemInstruction: modeInstruction,
   };
 
-  if (enableGoogleSearch && !hasImages) {
+  if (enableGoogleSearch && !hasMedia) {
     config.tools = [{ googleSearch: {} }];
   }
 

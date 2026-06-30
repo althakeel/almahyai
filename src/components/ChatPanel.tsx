@@ -1,5 +1,5 @@
-import { memo, useState, useEffect, useRef, useCallback, KeyboardEvent, ChangeEvent } from 'react';
-import type { Conversation, Message, MessageImage, ChatMode } from '../types';
+import { memo, useState, useEffect, useRef, useCallback, KeyboardEvent, ChangeEvent, DragEvent } from 'react';
+import type { Conversation, Message, MessageImage, MessageAttachment, ChatMode } from '../types';
 import { orionApi } from '../api/client';
 import MarkdownMessage from './MarkdownMessage';
 import QuickPrompts from './QuickPrompts';
@@ -28,10 +28,82 @@ import {
   IconTextCopy,
   IconPdf,
   IconExcel,
+  IconPaperclip,
+  IconFile,
 } from './Icons';
 
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
+const MAX_DOCUMENT_BYTES = 10 * 1024 * 1024;
 const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+const ALLOWED_DOCUMENT_TYPES = [
+  'application/pdf',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-excel',
+  'text/plain',
+  'text/csv',
+  'application/csv',
+];
+
+const FILE_PICKER_ACCEPT = {
+  all: '*/*',
+  image: 'image/jpeg,image/png,image/webp,image/gif,.jpg,.jpeg,.png,.webp,.gif',
+  pdf: '.pdf,application/pdf',
+  excel: '.xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel',
+  document: '.pdf,.xlsx,.xls,.csv,.txt,application/pdf,text/plain,text/csv,application/csv',
+} as const;
+
+function isDocumentMime(mimeType: string): boolean {
+  return ALLOWED_DOCUMENT_TYPES.includes(mimeType);
+}
+
+function documentLabel(attachment: MessageAttachment): string {
+  if (attachment.mimeType === 'application/pdf') return 'PDF';
+  if (attachment.mimeType.includes('spreadsheet') || attachment.mimeType === 'application/vnd.ms-excel') {
+    return 'Excel';
+  }
+  if (attachment.mimeType === 'text/csv' || attachment.mimeType === 'application/csv') return 'CSV';
+  if (attachment.mimeType === 'text/plain') return 'Text';
+  return 'File';
+}
+
+function documentIcon(attachment: MessageAttachment, size = 18) {
+  if (attachment.mimeType === 'application/pdf') return <IconPdf size={size} />;
+  if (attachment.mimeType.includes('spreadsheet') || attachment.mimeType === 'application/vnd.ms-excel') {
+    return <IconExcel size={size} />;
+  }
+  return <IconFile size={size} />;
+}
+
+function resolveUploadMime(file: File): string | null {
+  if (file.type && (ALLOWED_IMAGE_TYPES.includes(file.type) || isDocumentMime(file.type))) {
+    return file.type;
+  }
+
+  const ext = file.name.split('.').pop()?.toLowerCase();
+  switch (ext) {
+    case 'jpg':
+    case 'jpeg':
+      return 'image/jpeg';
+    case 'png':
+      return 'image/png';
+    case 'webp':
+      return 'image/webp';
+    case 'gif':
+      return 'image/gif';
+    case 'pdf':
+      return 'application/pdf';
+    case 'xlsx':
+      return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+    case 'xls':
+      return 'application/vnd.ms-excel';
+    case 'csv':
+      return 'text/csv';
+    case 'txt':
+      return 'text/plain';
+    default:
+      return null;
+  }
+}
 
 interface Props {
   conversation: Conversation;
@@ -141,6 +213,15 @@ const MessageRow = memo(function MessageRow({
             </div>
           )}
         </div>
+        {msg.attachment && (
+          <div className="chat-doc-attachment" title={msg.attachment.filename}>
+            <span className="chat-doc-icon">{documentIcon(msg.attachment)}</span>
+            <span className="chat-doc-meta">
+              <span className="chat-doc-type">{documentLabel(msg.attachment)}</span>
+              <span className="chat-doc-name">{msg.attachment.filename}</span>
+            </span>
+          </div>
+        )}
         {msg.image && (
           <div className="chat-image-wrap">
             <div className="chat-image-frame">
@@ -253,14 +334,19 @@ export default function ChatPanel({
   const [input, setInput] = useState('');
   const [pendingImage, setPendingImage] = useState<MessageImage | null>(null);
   const [pendingPreview, setPendingPreview] = useState<string | null>(null);
+  const [pendingDocument, setPendingDocument] = useState<MessageAttachment | null>(null);
   const [sending, setSending] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [copied, setCopied] = useState<CopiedKey>(null);
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
+  const [dragActive, setDragActive] = useState(false);
+  const [attachMenuOpen, setAttachMenuOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const attachMenuRef = useRef<HTMLDivElement>(null);
   const messagesCache = useRef<Map<string, Message[]>>(new Map());
+  const dragDepthRef = useRef(0);
 
   useEffect(() => {
     if (guestMode) return;
@@ -301,7 +387,21 @@ export default function ChatPanel({
   }, [composerDisabled]);
 
   useEffect(() => {
+    if (!attachMenuOpen) return;
+
+    const onPointerDown = (e: MouseEvent) => {
+      if (!attachMenuRef.current?.contains(e.target as Node)) {
+        setAttachMenuOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', onPointerDown);
+    return () => document.removeEventListener('mousedown', onPointerDown);
+  }, [attachMenuOpen]);
+
+  useEffect(() => {
     if (!lightboxImage) return;
+
     const onKeyDown = (e: globalThis.KeyboardEvent) => {
       if (e.key === 'Escape') setLightboxImage(null);
     };
@@ -367,43 +467,149 @@ export default function ChatPanel({
     if (fileInputRef.current) fileInputRef.current.value = '';
   }, []);
 
-  const handleImageSelect = (e: ChangeEvent<HTMLInputElement>) => {
-    if (guestMode) {
-      onSignInRequired?.();
-      alert('Image upload requires a signed-in account. Sign in for unlimited chat and images.');
-      if (fileInputRef.current) fileInputRef.current.value = '';
-      return;
-    }
+  const clearPendingDocument = useCallback(() => {
+    setPendingDocument(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  }, []);
 
+  const clearPendingFiles = useCallback(() => {
+    clearPendingImage();
+    clearPendingDocument();
+  }, [clearPendingImage, clearPendingDocument]);
+
+  const processUploadFile = useCallback(
+    (file: File) => {
+      if (guestMode) {
+        onSignInRequired?.();
+        alert('File upload requires a signed-in account.');
+        return;
+      }
+
+      if (sending) return;
+
+      const mimeType = resolveUploadMime(file);
+      if (!mimeType) {
+        alert('Supported files: images, PDF, Excel (.xlsx, .xls), CSV, and text (.txt).');
+        clearPendingFiles();
+        return;
+      }
+
+      if (ALLOWED_IMAGE_TYPES.includes(mimeType)) {
+        if (file.size > MAX_IMAGE_BYTES) {
+          alert('Image must be 4 MB or smaller.');
+          clearPendingFiles();
+          return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = () => {
+          const result = reader.result as string;
+          const base64 = result.split(',')[1];
+          if (!base64) return;
+          setPendingDocument(null);
+          setPendingImage({ mimeType, data: base64 });
+          setPendingPreview(result);
+        };
+        reader.readAsDataURL(file);
+        return;
+      }
+
+      if (isDocumentMime(mimeType)) {
+        if (file.size > MAX_DOCUMENT_BYTES) {
+          alert('PDF or Excel file must be 10 MB or smaller.');
+          clearPendingFiles();
+          return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = () => {
+          const result = reader.result as string;
+          const base64 = result.split(',')[1];
+          if (!base64) return;
+          setPendingImage(null);
+          setPendingPreview(null);
+          setPendingDocument({
+            mimeType,
+            data: base64,
+            filename: file.name,
+          });
+        };
+        reader.readAsDataURL(file);
+        return;
+      }
+
+      alert('Supported files: images, PDF, Excel (.xlsx, .xls), CSV, and text (.txt).');
+      clearPendingFiles();
+    },
+    [guestMode, sending, onSignInRequired, clearPendingFiles]
+  );
+
+  const openFilePicker = useCallback(
+    (accept: string) => {
+      if (guestMode) {
+        onSignInRequired?.();
+        alert('File upload requires sign in.');
+        return;
+      }
+      const input = fileInputRef.current;
+      if (!input) return;
+      input.accept = accept;
+      input.value = '';
+      input.click();
+      setAttachMenuOpen(false);
+    },
+    [guestMode, onSignInRequired]
+  );
+
+  const handleFileSelect = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    processUploadFile(file);
+  };
 
-    if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
-      alert('Please choose a JPEG, PNG, WebP, or GIF image.');
-      clearPendingImage();
-      return;
+  const handleDragEnter = (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (composerDisabled) return;
+    if (!e.dataTransfer.types.includes('Files')) return;
+
+    dragDepthRef.current += 1;
+    setDragActive(true);
+  };
+
+  const handleDragLeave = (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+    if (dragDepthRef.current === 0) {
+      setDragActive(false);
     }
+  };
 
-    if (file.size > MAX_IMAGE_BYTES) {
-      alert('Image must be 4 MB or smaller.');
-      clearPendingImage();
-      return;
+  const handleDragOver = (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (composerDisabled) return;
+    e.dataTransfer.dropEffect = 'copy';
+  };
+
+  const handleDrop = (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragDepthRef.current = 0;
+    setDragActive(false);
+    if (composerDisabled) return;
+
+    const file = e.dataTransfer.files?.[0];
+    if (file) {
+      processUploadFile(file);
+      focusComposer();
     }
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result as string;
-      const base64 = result.split(',')[1];
-      if (!base64) return;
-      setPendingImage({ mimeType: file.type, data: base64 });
-      setPendingPreview(result);
-    };
-    reader.readAsDataURL(file);
   };
 
   const handleSend = async () => {
     const text = input.trim();
-    if ((!text && !pendingImage) || sending) return;
+    if ((!text && !pendingImage && !pendingDocument) || sending) return;
 
     if (guestMode && !guestApiReady) {
       onSignInRequired?.();
@@ -416,9 +622,9 @@ export default function ChatPanel({
       return;
     }
 
-    if (guestMode && pendingImage) {
+    if (guestMode && (pendingImage || pendingDocument)) {
       onSignInRequired?.();
-      alert('Image upload requires sign in.');
+      alert('File upload requires sign in.');
       return;
     }
 
@@ -427,17 +633,24 @@ export default function ChatPanel({
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
 
     const imageToSend = guestMode ? null : pendingImage;
+    const documentToSend = guestMode ? null : pendingDocument;
+    const defaultPrompt = documentToSend
+      ? `Please analyze "${documentToSend.filename}".`
+      : imageToSend
+        ? 'Describe this image.'
+        : '';
     const now = new Date().toISOString();
     const tempUserMsg: Message = {
       id: 'temp-user',
       conversationId: conversation.id,
       role: 'user',
-      content: text || 'Describe this image.',
+      content: text || defaultPrompt,
       image: imageToSend,
+      attachment: documentToSend,
       createdAt: now,
     };
     setMessages((prev) => [...prev, tempUserMsg]);
-    clearPendingImage();
+    clearPendingFiles();
 
     try {
       if (guestMode) {
@@ -469,7 +682,8 @@ export default function ChatPanel({
         conversation.provider,
         conversation.model,
         imageToSend,
-        chatMode
+        chatMode,
+        documentToSend
       );
 
       if (result.content && result.messageId) {
@@ -493,7 +707,7 @@ export default function ChatPanel({
         setMessages(updated);
       }
 
-      const titleSource = text || 'Image chat';
+      const titleSource = text || documentToSend?.filename || 'Image chat';
       if (conversation.title === 'New Chat' && titleSource.length > 0) {
         const newTitle = titleSource.slice(0, 40) + (titleSource.length > 40 ? '...' : '');
         orionApi.conversation.rename(conversation.id, newTitle).then(() => onTitleUpdate(newTitle));
@@ -651,7 +865,21 @@ export default function ChatPanel({
   const modeConfig = getModeConfig(chatMode);
 
   return (
-    <div className="chat-panel">
+    <div
+      className={`chat-panel${dragActive ? ' chat-panel-drag-active' : ''}`}
+      onDragEnter={handleDragEnter}
+      onDragLeave={handleDragLeave}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+    >
+      {dragActive && (
+        <div className="chat-panel-drop-overlay" aria-hidden="true">
+          <div className="chat-panel-drop-card">
+            <IconPaperclip size={28} />
+            <p>Drop image, PDF, Excel, CSV, or text file here</p>
+          </div>
+        </div>
+      )}
       {messages.length > 0 && (
         <div className="chat-export-bar">
           <button
@@ -788,32 +1016,69 @@ export default function ChatPanel({
             </button>
           </div>
         )}
+        {pendingDocument && (
+          <div className="composer-doc-preview">
+            <span className="composer-doc-icon">{documentIcon(pendingDocument, 20)}</span>
+            <span className="composer-doc-name">{pendingDocument.filename}</span>
+            <button type="button" className="composer-image-remove" onClick={clearPendingDocument} aria-label="Remove file">
+              ×
+            </button>
+          </div>
+        )}
         <div className="composer-box">
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/jpeg,image/png,image/webp,image/gif"
+            accept="*/*"
             className="composer-file-input"
-            onChange={handleImageSelect}
+            onChange={handleFileSelect}
             disabled={sending}
           />
-          <button
-            type="button"
-            className="composer-attach"
-            onClick={() => {
-              if (guestMode) {
-                onSignInRequired?.();
-                alert('Image upload requires sign in.');
-                return;
-              }
-              fileInputRef.current?.click();
-            }}
-            disabled={sending}
-            aria-label={guestMode ? 'Sign in to attach image' : 'Attach image'}
-            title={guestMode ? 'Sign in to attach images' : 'Attach image'}
-          >
-            <IconImage size={20} />
-          </button>
+          <div className="composer-attach-wrap" ref={attachMenuRef}>
+            <button
+              type="button"
+              className={`composer-attach${attachMenuOpen ? ' active' : ''}`}
+              onClick={() => {
+                if (guestMode) {
+                  onSignInRequired?.();
+                  alert('File upload requires sign in.');
+                  return;
+                }
+                setAttachMenuOpen((open) => !open);
+              }}
+              disabled={sending}
+              aria-label={guestMode ? 'Sign in to attach files' : 'Attach file'}
+              title={guestMode ? 'Sign in to attach files' : 'Attach image, PDF, Excel, or other file'}
+              aria-expanded={attachMenuOpen}
+              aria-haspopup="menu"
+            >
+              <IconPaperclip size={20} />
+            </button>
+            {attachMenuOpen && (
+              <div className="composer-attach-menu" role="menu">
+                <button type="button" role="menuitem" onClick={() => openFilePicker(FILE_PICKER_ACCEPT.all)}>
+                  <IconFile size={16} />
+                  <span>All files</span>
+                </button>
+                <button type="button" role="menuitem" onClick={() => openFilePicker(FILE_PICKER_ACCEPT.image)}>
+                  <IconImage size={16} />
+                  <span>Image</span>
+                </button>
+                <button type="button" role="menuitem" onClick={() => openFilePicker(FILE_PICKER_ACCEPT.pdf)}>
+                  <IconPdf size={16} />
+                  <span>PDF</span>
+                </button>
+                <button type="button" role="menuitem" onClick={() => openFilePicker(FILE_PICKER_ACCEPT.excel)}>
+                  <IconExcel size={16} />
+                  <span>Excel</span>
+                </button>
+                <button type="button" role="menuitem" onClick={() => openFilePicker(FILE_PICKER_ACCEPT.document)}>
+                  <IconFile size={16} />
+                  <span>Documents (PDF, Excel, CSV, TXT)</span>
+                </button>
+              </div>
+            )}
+          </div>
           <textarea
             ref={textareaRef}
             value={input}
@@ -830,7 +1095,7 @@ export default function ChatPanel({
             disabled={
               sending ||
               (guestMode && (!guestApiReady || guestRemaining <= 0)) ||
-              (!input.trim() && !pendingImage)
+              (!input.trim() && !pendingImage && !pendingDocument)
             }
             aria-label="Send"
           >
@@ -842,7 +1107,7 @@ export default function ChatPanel({
             ? guestApiReady
               ? `${guestRemaining} free messages left · Ctrl+Enter to send`
               : 'Sign in to continue chatting'
-            : 'Ctrl+Enter to send'}
+            : 'Ctrl+Enter to send · Attach or drag image, PDF, Excel, CSV, TXT'}
         </p>
       </div>
     </div>

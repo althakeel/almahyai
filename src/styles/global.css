@@ -816,6 +816,46 @@ input, textarea, select {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  position: relative;
+}
+
+.chat-panel-drop-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(4px);
+  pointer-events: none;
+  animation: lightbox-fade-in 0.15s ease;
+}
+
+.chat-panel-drop-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 28px 36px;
+  border-radius: 16px;
+  border: 2px dashed var(--accent);
+  background: rgba(16, 163, 127, 0.12);
+  color: var(--text-primary);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.35);
+}
+
+.chat-panel-drop-card p {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.chat-panel-drag-active .chat-composer,
+.chat-panel-drag-active .chat-messages {
+  outline: 2px dashed rgba(16, 163, 127, 0.35);
+  outline-offset: -6px;
 }
 
 .chat-export-bar {
@@ -1277,6 +1317,53 @@ input, textarea, select {
   cursor: not-allowed;
 }
 
+.composer-attach.active {
+  background: rgba(16, 163, 127, 0.15);
+  color: var(--accent);
+}
+
+.composer-attach-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.composer-attach-menu {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 8px);
+  min-width: 220px;
+  padding: 6px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.composer-attach-menu button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+
+.composer-attach-menu button:hover {
+  background: rgba(16, 163, 127, 0.12);
+  color: var(--accent);
+}
+
 .composer-image-preview {
   max-width: 768px;
   margin: 0 auto 10px;
@@ -1302,6 +1389,67 @@ input, textarea, select {
   color: #fff;
   font-size: 16px;
   line-height: 1;
+}
+
+.composer-doc-preview,
+.chat-doc-attachment {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+}
+
+.composer-doc-preview {
+  max-width: 768px;
+  margin: 0 auto 10px;
+  position: relative;
+  padding-right: 40px;
+}
+
+.chat-doc-attachment {
+  margin-bottom: 10px;
+  max-width: min(100%, 420px);
+}
+
+.composer-doc-icon,
+.chat-doc-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: rgba(16, 163, 127, 0.12);
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.composer-doc-name,
+.chat-doc-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-doc-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.chat-doc-type {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--accent);
 }
 
 .chat-composer {
