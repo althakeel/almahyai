@@ -93,6 +93,118 @@ export async function exportMessagesToPdf(messages: Message[], title: string): P
   doc.save(`${sanitizeFilename(title)}.pdf`);
 }
 
+/** Create a new PDF document from any text (AI replies, edited content, etc.). */
+export async function exportTextToPdf(title: string, content: string): Promise<void> {
+  const { jsPDF } = await import('jspdf');
+  const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+  const margin = 48;
+  const pageWidth = doc.internal.pageSize.getWidth() - margin * 2;
+  const pageHeight = doc.internal.pageSize.getHeight();
+  let y = margin;
+
+  const newPageIfNeeded = (needed: number) => {
+    if (y + needed > pageHeight - margin) {
+      doc.addPage();
+      y = margin;
+    }
+  };
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(18);
+  doc.setTextColor(16, 163, 127);
+  const titleLines = doc.splitTextToSize(title, pageWidth);
+  for (const line of titleLines) {
+    newPageIfNeeded(22);
+    doc.text(line, margin, y);
+    y += 22;
+  }
+
+  y += 6;
+  doc.setFontSize(9);
+  doc.setTextColor(120);
+  doc.text(`Created ${new Date().toLocaleString()} · Almahy AI`, margin, y);
+  y += 22;
+
+  const lines = content.replace(/\r\n/g, '\n').split('\n');
+
+  for (const rawLine of lines) {
+    const line = rawLine.trimEnd();
+    if (!line.trim()) {
+      y += 8;
+      continue;
+    }
+
+    if (/^###\s+/.test(line)) {
+      newPageIfNeeded(20);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(11);
+      doc.setTextColor(40);
+      const text = line.replace(/^###\s+/, '');
+      for (const wrapped of doc.splitTextToSize(text, pageWidth)) {
+        newPageIfNeeded(14);
+        doc.text(wrapped, margin, y);
+        y += 14;
+      }
+      y += 4;
+      continue;
+    }
+
+    if (/^##\s+/.test(line)) {
+      newPageIfNeeded(22);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(13);
+      doc.setTextColor(16, 163, 127);
+      const text = line.replace(/^##\s+/, '');
+      for (const wrapped of doc.splitTextToSize(text, pageWidth)) {
+        newPageIfNeeded(16);
+        doc.text(wrapped, margin, y);
+        y += 16;
+      }
+      y += 6;
+      continue;
+    }
+
+    if (/^#\s+/.test(line)) {
+      newPageIfNeeded(24);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(15);
+      doc.setTextColor(16, 163, 127);
+      const text = line.replace(/^#\s+/, '');
+      for (const wrapped of doc.splitTextToSize(text, pageWidth)) {
+        newPageIfNeeded(18);
+        doc.text(wrapped, margin, y);
+        y += 18;
+      }
+      y += 8;
+      continue;
+    }
+
+    if (/^[-*•]\s+/.test(line)) {
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(10);
+      doc.setTextColor(30);
+      const text = `• ${line.replace(/^[-*•]\s+/, '')}`;
+      for (const wrapped of doc.splitTextToSize(text, pageWidth - 12)) {
+        newPageIfNeeded(14);
+        doc.text(wrapped, margin + 8, y);
+        y += 14;
+      }
+      continue;
+    }
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(10);
+    doc.setTextColor(30);
+    for (const wrapped of doc.splitTextToSize(line, pageWidth)) {
+      newPageIfNeeded(14);
+      doc.text(wrapped, margin, y);
+      y += 14;
+    }
+  }
+
+  doc.save(`${sanitizeFilename(title)}.pdf`);
+}
+
 export function exportMessagesToExcel(messages: Message[], title: string): void {
   const rows = messages
     .filter((m) => m.role !== 'system')
@@ -128,4 +240,122 @@ export async function exportMessageToPdf(message: Message, title: string): Promi
 
 export function exportMessageToExcel(message: Message, title: string): void {
   exportMessagesToExcel([message], title);
+}
+
+function parseMarkdownTableRow(line: string): string[] | null {
+  const trimmed = line.trim();
+  if (!trimmed.startsWith('|') || !trimmed.endsWith('|')) return null;
+  const cells = trimmed
+    .slice(1, -1)
+    .split('|')
+    .map((c) => c.trim());
+  return cells.length > 0 ? cells : null;
+}
+
+function isSeparatorRow(cells: string[]): boolean {
+  return cells.every((c) => /^:?-{2,}:?$/.test(c.replace(/\s/g, '')));
+}
+
+function extractMarkdownTables(content: string): string[][][] {
+  const tables: string[][][] = [];
+  const lines = content.split('\n');
+  let i = 0;
+
+  while (i < lines.length) {
+    const header = parseMarkdownTableRow(lines[i]);
+    if (!header) {
+      i += 1;
+      continue;
+    }
+    const sep = i + 1 < lines.length ? parseMarkdownTableRow(lines[i + 1]) : null;
+    if (!sep || !isSeparatorRow(sep)) {
+      i += 1;
+      continue;
+    }
+    const rows: string[][] = [header];
+    i += 2;
+    while (i < lines.length) {
+      const row = parseMarkdownTableRow(lines[i]);
+      if (!row) break;
+      rows.push(row);
+      i += 1;
+    }
+    if (rows.length > 1) tables.push(rows);
+  }
+
+  return tables;
+}
+
+function extractSheetSections(content: string): { name: string; tables: string[][][] }[] {
+  const sections: { name: string; tables: string[][][] }[] = [];
+  const parts = content.split(/^##\s+Sheet:\s*/im);
+
+  if (parts.length <= 1) {
+    const tables = extractMarkdownTables(content);
+    if (tables.length > 0) sections.push({ name: 'Sheet1', tables });
+    return sections;
+  }
+
+  for (let i = 1; i < parts.length; i++) {
+    const chunk = parts[i];
+    const nl = chunk.indexOf('\n');
+    const name = (nl >= 0 ? chunk.slice(0, nl) : chunk).trim() || `Sheet${i}`;
+    const body = nl >= 0 ? chunk.slice(nl + 1) : '';
+    const tables = extractMarkdownTables(body);
+    if (tables.length > 0) sections.push({ name, tables });
+  }
+
+  return sections;
+}
+
+function safeSheetName(name: string, used: Set<string>): string {
+  const base = name.replace(/[\\/*?:[\]]/g, '').trim().slice(0, 28) || 'Sheet';
+  let candidate = base;
+  let n = 2;
+  while (used.has(candidate.toLowerCase())) {
+    candidate = `${base.slice(0, 25)}_${n}`;
+    n += 1;
+  }
+  used.add(candidate.toLowerCase());
+  return candidate;
+}
+
+/** Create a new Excel workbook from AI table output (markdown tables or sheet sections). */
+export async function exportTextToExcel(title: string, content: string): Promise<void> {
+  const XLSX = await import('xlsx');
+  const wb = XLSX.utils.book_new();
+  const usedNames = new Set<string>();
+
+  const sections = extractSheetSections(content);
+  const tables = sections.length > 0 ? sections : [{ name: 'Sheet1', tables: extractMarkdownTables(content) }];
+
+  let sheetCount = 0;
+  for (const section of tables) {
+    for (const table of section.tables) {
+      const ws = XLSX.utils.aoa_to_sheet(table);
+      const sheetName = safeSheetName(
+        section.tables.length > 1 ? `${section.name}_${sheetCount + 1}` : section.name,
+        usedNames
+      );
+      XLSX.utils.book_append_sheet(wb, ws, sheetName);
+      sheetCount += 1;
+    }
+  }
+
+  if (sheetCount === 0) {
+    const lines = content
+      .split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean);
+    const ws = XLSX.utils.aoa_to_sheet(lines.length > 0 ? lines.map((l) => [l]) : [['']]);
+    XLSX.utils.book_append_sheet(wb, ws, safeSheetName('Content', usedNames));
+  }
+
+  const out = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+  downloadBlob(
+    new Blob([out], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    }),
+    `${sanitizeFilename(title)}.xlsx`
+  );
 }

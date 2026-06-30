@@ -2,6 +2,7 @@ import { memo, useState, useEffect, useRef, useCallback, KeyboardEvent, ChangeEv
 import type { Conversation, Message, MessageImage, MessageAttachment, ChatMode } from '../types';
 import { orionApi } from '../api/client';
 import MarkdownMessage from './MarkdownMessage';
+import ConfirmDialog from './ConfirmDialog';
 import QuickPrompts from './QuickPrompts';
 import ChatModeBar from './ChatModeBar';
 import { QUICK_PROMPTS, GUEST_QUICK_PROMPTS, getModeConfig } from '../config/chatModes';
@@ -18,6 +19,8 @@ import {
   exportMessagesToExcel,
   exportMessageToPdf,
   exportMessageToExcel,
+  exportTextToPdf,
+  exportTextToExcel,
 } from '../utils/export';
 import {
   IconDownload,
@@ -183,8 +186,8 @@ const MessageRow = memo(function MessageRow({
                     type="button"
                     className="message-action-btn icon-action icon-only"
                     onClick={() => onExportPdf(msg)}
-                    title="Save as PDF"
-                    aria-label="Save as PDF"
+                    title="Download as PDF"
+                    aria-label="Download as PDF"
                   >
                     <IconPdf size={14} />
                   </button>
@@ -343,6 +346,8 @@ export default function ChatPanel({
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
   const [attachMenuOpen, setAttachMenuOpen] = useState(false);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [clearing, setClearing] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -834,26 +839,72 @@ export default function ChatPanel({
     }
   };
 
-  const handleClearChat = async () => {
+  const handleClearChat = () => {
     if (messages.length === 0 || sending) return;
-    if (!window.confirm('Clear all messages in this chat? The chat will stay in your history but empty.')) {
-      return;
-    }
+    setShowClearConfirm(true);
+  };
 
+  const confirmClearChat = async () => {
+    setClearing(true);
     try {
       await orionApi.conversation.clearMessages(conversation.id);
       messagesCache.current.set(conversation.id, []);
       setMessages([]);
       onConversationCleared?.();
+      setShowClearConfirm(false);
     } catch {
       alert('Could not clear chat. Try again.');
+    } finally {
+      setClearing(false);
     }
+  };
+
+  const handleNewPdf = async () => {
+    const lastAssistant = [...messages].reverse().find((m) => m.role === 'assistant' && m.content?.trim());
+    if (!lastAssistant?.content) {
+      alert('Ask Almahy AI to write your document first, then click New PDF to download it.');
+      return;
+    }
+    const defaultTitle = conversation.title && conversation.title !== 'New Chat' ? conversation.title : 'Almahy Document';
+    const title = window.prompt('Name your new PDF:', defaultTitle)?.trim() || defaultTitle;
+    setExporting(true);
+    try {
+      await exportTextToPdf(title, lastAssistant.content);
+      flashCopied('new-pdf');
+    } catch {
+      alert('Could not create PDF. Try again.');
+    }
+    setExporting(false);
+  };
+
+  const handleNewExcel = async () => {
+    const lastAssistant = [...messages].reverse().find((m) => m.role === 'assistant' && m.content?.trim());
+    if (!lastAssistant?.content) {
+      alert('Ask Almahy AI to build or edit your spreadsheet first, then click New Excel to download it.');
+      return;
+    }
+    const defaultTitle =
+      conversation.title && conversation.title !== 'New Chat' ? conversation.title : 'Almahy Spreadsheet';
+    const title = window.prompt('Name your new Excel file:', defaultTitle)?.trim() || defaultTitle;
+    setExporting(true);
+    try {
+      await exportTextToExcel(title, lastAssistant.content);
+      flashCopied('new-excel');
+    } catch {
+      alert('Could not create Excel file. Try again.');
+    }
+    setExporting(false);
   };
 
   const handleExportMsgPdf = useCallback(
     async (msg: Message) => {
       try {
-        await exportMessageToPdf(msg, `${exportTitle}-message`);
+        if (msg.role === 'assistant' && msg.content) {
+          const title = `${exportTitle}-reply`;
+          await exportTextToPdf(title, msg.content);
+        } else {
+          await exportMessageToPdf(msg, `${exportTitle}-message`);
+        }
         flashCopied(`${msg.id}-pdf`);
       } catch {
         alert('Could not create PDF.');
@@ -911,13 +962,33 @@ export default function ChatPanel({
           </button>
           <button
             type="button"
+            className="chat-export-btn compact primary"
+            onClick={handleNewPdf}
+            disabled={exporting}
+            title="Create PDF from the latest Almahy AI reply"
+          >
+            <IconPdf size={15} />
+            <span>{exporting ? 'Creating…' : 'New PDF'}</span>
+          </button>
+          <button
+            type="button"
+            className="chat-export-btn compact primary"
+            onClick={handleNewExcel}
+            disabled={exporting}
+            title="Create Excel from the latest Almahy AI reply"
+          >
+            <IconExcel size={15} />
+            <span>{exporting ? 'Creating…' : 'New Excel'}</span>
+          </button>
+          <button
+            type="button"
             className="chat-export-btn compact"
             onClick={handleExportChatPdf}
             disabled={exporting}
-            title="Save chat as PDF"
+            title="Save entire chat as PDF"
           >
             <IconPdf size={15} />
-            <span>{exporting ? 'Saving…' : 'Save PDF'}</span>
+            <span>{exporting ? 'Saving…' : 'Export chat'}</span>
           </button>
           <button
             type="button"
@@ -1047,6 +1118,9 @@ export default function ChatPanel({
           <div className="composer-doc-preview">
             <span className="composer-doc-icon">{documentIcon(pendingDocument, 20)}</span>
             <span className="composer-doc-name">{pendingDocument.filename}</span>
+            {pendingDocument.mimeType === 'application/pdf' && (
+              <span className="composer-doc-hint">Attach &amp; ask to edit, summarize, or rewrite</span>
+            )}
             <button type="button" className="composer-image-remove" onClick={clearPendingDocument} aria-label="Remove file">
               ×
             </button>
@@ -1137,6 +1211,17 @@ export default function ChatPanel({
             : 'Ctrl+Enter to send · Attach or drag image, PDF, Excel, CSV, TXT'}
         </p>
       </div>
+
+      <ConfirmDialog
+        open={showClearConfirm}
+        title="Clear this chat?"
+        message="Remove all messages in this chat? The chat stays in your history but will be empty."
+        confirmLabel="Clear chat"
+        danger
+        loading={clearing}
+        onConfirm={confirmClearChat}
+        onCancel={() => !clearing && setShowClearConfirm(false)}
+      />
     </div>
   );
 }

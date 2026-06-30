@@ -1,28 +1,26 @@
 import { useState, useEffect, useCallback, useRef, lazy, Suspense, useMemo } from 'react';
 import type { User, Workspace as WorkspaceType, Conversation } from '../types';
 import ChatPanel from './ChatPanel';
+import ConfirmDialog from './ConfirmDialog';
 import { orionApi, checkBackendHealth } from '../api/client';
 import { useTheme } from '../hooks/useTheme';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
 
 const Settings = lazy(() => import('./Settings'));
+const Profile = lazy(() => import('./Profile'));
 
 interface Props {
   user: User;
   onLogout: () => void;
+  onUserUpdate: (user: User) => void;
 }
 
-export default function Workspace({ user, onLogout }: Props) {
-  const handleLogout = () => {
-    const ok = window.confirm('Are you sure you want to sign out?');
-    if (ok) onLogout();
-  };
-
+export default function Workspace({ user, onLogout, onUserUpdate }: Props) {
   const { theme, toggleTheme } = useTheme();
   const [activeWorkspace, setActiveWorkspace] = useState<WorkspaceType | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversation, setActiveConversation] = useState<Conversation | null>(null);
-  const [view, setView] = useState<'chat' | 'settings'>('chat');
+  const [view, setView] = useState<'chat' | 'settings' | 'profile'>('chat');
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
@@ -32,6 +30,9 @@ export default function Workspace({ user, onLogout }: Props) {
   const [loading, setLoading] = useState(true);
   const [creatingChat, setCreatingChat] = useState(false);
   const [error, setError] = useState('');
+  const [pendingDelete, setPendingDelete] = useState<{ id: string; title?: string } | null>(null);
+  const [pendingDeleteAll, setPendingDeleteAll] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const bootstrapped = useRef(false);
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -127,10 +128,14 @@ export default function Workspace({ user, onLogout }: Props) {
     }
   }, [ensureWorkspace, createNewChat]);
 
-  const handleDeleteConversation = async (id: string, title?: string) => {
-    const label = title ? `"${title}"` : 'this chat';
-    if (!window.confirm(`Delete ${label}? This cannot be undone.`)) return;
+  const handleDeleteConversation = (id: string, title?: string) => {
+    setPendingDelete({ id, title });
+  };
 
+  const confirmDeleteConversation = async () => {
+    if (!pendingDelete) return;
+    const { id } = pendingDelete;
+    setDeleting(true);
     try {
       await orionApi.conversation.delete(id);
       const remaining = conversations.filter((c) => c.id !== id);
@@ -145,21 +150,21 @@ export default function Workspace({ user, onLogout }: Props) {
           await createNewChat(workspace);
         }
       }
+      setPendingDelete(null);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Could not delete chat');
+    } finally {
+      setDeleting(false);
     }
   };
 
-  const handleDeleteAllHistory = async () => {
+  const handleDeleteAllHistory = () => {
     if (conversations.length === 0) return;
-    if (
-      !window.confirm(
-        `Delete all ${conversations.length} chats? This permanently removes your entire chat history.`
-      )
-    ) {
-      return;
-    }
+    setPendingDeleteAll(true);
+  };
 
+  const confirmDeleteAllHistory = async () => {
+    setDeleting(true);
     try {
       const workspace = await ensureWorkspace();
       await orionApi.conversation.deleteAll(workspace.id);
@@ -167,8 +172,11 @@ export default function Workspace({ user, onLogout }: Props) {
       setActiveConversation(null);
       await createNewChat(workspace);
       setError('');
+      setPendingDeleteAll(false);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Could not delete history');
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -278,13 +286,23 @@ export default function Workspace({ user, onLogout }: Props) {
             </button>
           )}
           <div className="user-menu">
-            <div className="user-avatar">{user.displayName[0]?.toUpperCase()}</div>
-            <div className="user-details">
-              <span className="user-name">{user.displayName}</span>
-              <span className="user-email">{user.email}</span>
-            </div>
-            <button type="button" className="logout-btn" onClick={handleLogout} title="Sign out">
-              ↪
+            <button
+              type="button"
+              className="user-menu-open"
+              onClick={() => {
+                setView('profile');
+                setError('');
+              }}
+              title="Open profile"
+            >
+              <div className="user-avatar">{user.displayName[0]?.toUpperCase()}</div>
+              <div className="user-details">
+                <span className="user-name">{user.displayName}</span>
+                <span className="user-email">{user.email}</span>
+              </div>
+              <span className="user-menu-chevron" aria-hidden="true">
+                ›
+              </span>
             </button>
           </div>
         </div>
@@ -336,6 +354,16 @@ export default function Workspace({ user, onLogout }: Props) {
           <Suspense fallback={<div className="chat-loading">Loading settings...</div>}>
             <Settings />
           </Suspense>
+        ) : view === 'profile' ? (
+          <Suspense fallback={<div className="chat-loading">Loading profile...</div>}>
+            <Profile
+              user={user}
+              onBack={() => setView('chat')}
+              onLogout={onLogout}
+              onUserUpdate={onUserUpdate}
+              onAccountDeleted={onLogout}
+            />
+          </Suspense>
         ) : loading ? (
           <div className="chat-loading">Loading chats...</div>
         ) : activeConversation ? (
@@ -365,6 +393,32 @@ export default function Workspace({ user, onLogout }: Props) {
           </div>
         )}
       </main>
+
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        title="Delete chat?"
+        message={
+          pendingDelete?.title
+            ? `Delete "${pendingDelete.title}"? This cannot be undone.`
+            : 'Delete this chat? This cannot be undone.'
+        }
+        confirmLabel="Delete"
+        danger
+        loading={deleting}
+        onConfirm={confirmDeleteConversation}
+        onCancel={() => !deleting && setPendingDelete(null)}
+      />
+
+      <ConfirmDialog
+        open={pendingDeleteAll}
+        title="Delete all history?"
+        message={`Delete all ${conversations.length} chats? This permanently removes your entire chat history.`}
+        confirmLabel="Delete all"
+        danger
+        loading={deleting}
+        onConfirm={confirmDeleteAllHistory}
+        onCancel={() => !deleting && setPendingDeleteAll(false)}
+      />
     </div>
   );
 }

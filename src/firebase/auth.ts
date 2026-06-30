@@ -7,6 +7,11 @@ import {
   GoogleAuthProvider,
   signOut,
   updateProfile,
+  updatePassword,
+  deleteUser,
+  reauthenticateWithCredential,
+  reauthenticateWithPopup,
+  EmailAuthProvider,
   onAuthStateChanged,
   type User as FirebaseUser,
 } from 'firebase/auth';
@@ -89,4 +94,43 @@ export function mapFirebaseUser(fbUser: FirebaseUser) {
     email: fbUser.email ?? '',
     displayName: fbUser.displayName ?? fbUser.email?.split('@')[0] ?? 'User',
   };
+}
+
+export function isEmailPasswordUser(): boolean {
+  return auth.currentUser?.providerData.some((p) => p.providerId === 'password') ?? false;
+}
+
+export function getSignInMethod(): 'email' | 'google' | 'other' {
+  const providers = auth.currentUser?.providerData.map((p) => p.providerId) ?? [];
+  if (providers.includes('password')) return 'email';
+  if (providers.includes('google.com')) return 'google';
+  return 'other';
+}
+
+export async function updateDisplayName(displayName: string): Promise<void> {
+  const user = auth.currentUser;
+  if (!user) throw new Error('Not signed in');
+  await updateProfile(user, { displayName: displayName.trim() });
+}
+
+export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
+  const user = auth.currentUser;
+  if (!user?.email) throw new Error('Email account required');
+  const credential = EmailAuthProvider.credential(user.email, currentPassword);
+  await reauthenticateWithCredential(user, credential);
+  await updatePassword(user, newPassword);
+}
+
+export async function deleteFirebaseAccount(password?: string): Promise<void> {
+  const user = auth.currentUser;
+  if (!user) throw new Error('Not signed in');
+
+  if (isEmailPasswordUser()) {
+    if (!user.email || !password) throw new Error('Password required');
+    await reauthenticateWithCredential(user, EmailAuthProvider.credential(user.email, password));
+  } else if (getSignInMethod() === 'google') {
+    await reauthenticateWithPopup(user, googleProvider);
+  }
+
+  await deleteUser(user);
 }

@@ -399,6 +399,20 @@ export async function deleteAllConversations(workspaceId: string): Promise<void>
   await conversations().deleteMany({ workspaceId });
 }
 
+export async function updateUserDisplayName(userId: string, displayName: string): Promise<void> {
+  await users().updateOne({ _id: userId }, { $set: { displayName: displayName.trim() } });
+}
+
+export async function deleteUserAccount(userId: string): Promise<void> {
+  const userWorkspaces = await workspaces().find({ userId }).toArray();
+  for (const ws of userWorkspaces) {
+    await deleteAllConversations(ws._id);
+  }
+  await workspaces().deleteMany({ userId });
+  await apiKeys().deleteMany({ userId });
+  await users().deleteOne({ _id: userId });
+}
+
 export async function getMessages(conversationId: string): Promise<Message[]> {
   const rows = await messages().find({ conversationId }).sort({ createdAt: 1 }).toArray();
   return rows.map((r) => ({

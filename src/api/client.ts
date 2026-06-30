@@ -108,6 +108,15 @@ export const orionApi = {
     getCurrentUser: async () => {
       return apiFetch<{ success: boolean; user: User }>('/auth/me');
     },
+    updateProfile: (displayName: string) =>
+      apiFetch<{ success: boolean; user?: User }>('/auth/profile', {
+        method: 'PATCH',
+        body: JSON.stringify({ displayName }),
+      }),
+    deleteAccount: () =>
+      apiFetch<{ success: boolean }>('/auth/account', {
+        method: 'DELETE',
+      }),
   },
   models: {
     list: () => apiFetch<{ openai: string[]; gemini: string[] }>('/models'),

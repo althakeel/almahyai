@@ -2,7 +2,7 @@ import OpenAI from 'openai';
 import { GoogleGenAI } from '@google/genai';
 import { getPlatformApiKeys, getMessages, addMessage, type MessageImage, type MessageAttachment } from './database';
 import { DEFAULT_CHAT_PROVIDER, DEFAULT_CHAT_MODEL } from './config';
-import { prepareAttachment, isPdfMime, attachmentForStorage } from './file-content';
+import { prepareAttachment, isPdfMime, isExcelMime, attachmentForStorage } from './file-content';
 import {
   multiEngineSearch,
   formatSearchContext,
@@ -432,10 +432,35 @@ function confidentialQuestionHint(): string {
   );
 }
 
-function fileAttachmentHint(): string {
-  return (
+function fileAttachmentHint(attachmentMime?: string): string {
+  let hint =
     ' IMPORTANT: The user uploaded a file. Its content is in this message (extracted text and/or attached PDF). ' +
-    'You CAN read it. NEVER refuse or say you cannot access PDFs/files. Answer from the file content directly.'
+    'You CAN read it. NEVER refuse or say you cannot access PDFs/files. Answer from the file content directly.';
+  if (attachmentMime && isPdfMime(attachmentMime)) {
+    hint +=
+      ' PDF EDITING: If they ask to edit, rewrite, update, fix, or improve the PDF, output the FULL revised document ' +
+      'with clear headings (## Section) and paragraphs so they can save it as a new PDF. Do not say you cannot edit PDFs.';
+  }
+  if (attachmentMime && isExcelMime(attachmentMime)) {
+    hint +=
+      ' EXCEL EDITING: If they ask to edit, update, fix, add rows/columns, or improve the spreadsheet, output the FULL revised data ' +
+      'as markdown table(s) with a header row (| Column | ... |) so they can save it as a new Excel file. ' +
+      'Include all sheets if multiple; label each with ## Sheet: Name. Do not say you cannot edit Excel files.';
+  }
+  return hint;
+}
+
+function excelCreationHint(): string {
+  return (
+    ' If the user wants a spreadsheet or table, output clean markdown table(s) with a header row (| Column | ... |). ' +
+    'They can download your reply as an Excel file using the New Excel button.'
+  );
+}
+
+function pdfCreationHint(): string {
+  return (
+    ' If the user wants a new PDF document, write complete polished content with a title (# Title) and sections (## Heading). ' +
+    'They can download your reply as a PDF using the New PDF button.'
   );
 }
 
@@ -443,11 +468,14 @@ function buildModeInstruction(
   mode: ChatMode | undefined,
   message: string,
   webResultCount: number,
-  hasFileAttachment = false
+  hasFileAttachment = false,
+  attachmentMime?: string
 ): string {
   let instruction = getModeInstruction(mode);
   if (webResultCount > 0) instruction += researchFormatHint();
-  if (hasFileAttachment) instruction += fileAttachmentHint();
+  if (hasFileAttachment) instruction += fileAttachmentHint(attachmentMime);
+  else if (/\b(pdf|document|report|letter|proposal)\b/i.test(message)) instruction += pdfCreationHint();
+  else if (/\b(excel|spreadsheet|xlsx|xls|csv|worksheet|workbook)\b/i.test(message)) instruction += excelCreationHint();
   if (isConnectionQuestion(message)) instruction += connectionQuestionHint();
   if (isConfidentialQuestion(message)) instruction += confidentialQuestionHint();
   else if (isAboutUsQuestion(message)) instruction += aboutUsQuestionHint();
@@ -513,7 +541,13 @@ export async function sendChatMessage(req: ChatRequest): Promise<ChatResponse> {
       })
     : [];
 
-  const modeInstruction = buildModeInstruction(req.mode, userText, webResults.length, hasUpload);
+  const modeInstruction = buildModeInstruction(
+    req.mode,
+    userText,
+    webResults.length,
+    hasUpload,
+    attachment?.mimeType
+  );
   const engine = pickChatEngine(keys, req.mode, !!req.image, !!attachment);
   const finalInstruction =
     engine.provider === 'gemini' ? modeInstruction + geminiAccuracyHint() : modeInstruction;

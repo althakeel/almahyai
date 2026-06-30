@@ -5,6 +5,8 @@ import {
   initDatabase,
   ensureFirebaseUser,
   getUserById,
+  updateUserDisplayName,
+  deleteUserAccount,
   savePlatformApiKeys,
   getPlatformApiKeysStatus,
   getWorkspaces,
@@ -56,6 +58,32 @@ app.get('/api/auth/me', requireAuth, async (req, res) => {
     return;
   }
   res.json({ success: true, user });
+});
+
+app.patch('/api/auth/profile', requireAuth, async (req, res) => {
+  try {
+    const displayName = (req.body.displayName as string)?.trim();
+    if (!displayName) {
+      res.status(400).json({ success: false, error: 'Display name is required' });
+      return;
+    }
+    await updateUserDisplayName(req.authUser!.uid, displayName);
+    const user = await getUserById(req.authUser!.uid);
+    res.json({ success: true, user });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Update failed';
+    res.status(400).json({ success: false, error: message });
+  }
+});
+
+app.delete('/api/auth/account', requireAuth, async (req, res) => {
+  try {
+    await deleteUserAccount(req.authUser!.uid);
+    res.json({ success: true });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Delete failed';
+    res.status(400).json({ success: false, error: message });
+  }
 });
 
 app.get('/api/config/chat', async (_req, res) => {

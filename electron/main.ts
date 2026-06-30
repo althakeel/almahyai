@@ -3,6 +3,8 @@ import path from 'path';
 import http from 'http';
 import { startStaticServer } from './static-server';
 
+app.setName('Almahy AI');
+
 let mainWindow: BrowserWindow | null = null;
 let staticServer: http.Server | null = null;
 

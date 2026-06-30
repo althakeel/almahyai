@@ -124,12 +124,23 @@ export default function App() {
     setUser(null);
   };
 
+  const handleUserUpdate = (updated: User) => {
+    setUser(updated);
+  };
+
   const sessionValid = user && auth.currentUser;
 
   let mainContent: ReactNode;
 
   if (sessionValid) {
-    mainContent = <Workspace key={auth.currentUser!.uid} user={user} onLogout={handleLogout} />;
+    mainContent = (
+      <Workspace
+        key={auth.currentUser!.uid}
+        user={user}
+        onLogout={handleLogout}
+        onUserUpdate={handleUserUpdate}
+      />
+    );
   } else if (loading && authChecked) {
     mainContent = <LoadingFallback message="Signing in…" />;
   } else {
