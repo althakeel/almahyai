@@ -30,7 +30,7 @@ const PORT = Number(process.env.PORT) || 3847;
 
 const app = express();
 app.use(cors({ origin: true, credentials: true }));
-app.use(express.json({ limit: '12mb' }));
+app.use(express.json({ limit: '25mb' }));
 
 app.get('/api/health', (_req, res) => {
   res.json({ ok: true, service: 'orion-ai-backend', database: 'mongodb' });

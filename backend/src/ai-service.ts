@@ -2,7 +2,7 @@ import OpenAI from 'openai';
 import { GoogleGenAI } from '@google/genai';
 import { getPlatformApiKeys, getMessages, addMessage, type MessageImage, type MessageAttachment } from './database';
 import { DEFAULT_CHAT_PROVIDER, DEFAULT_CHAT_MODEL } from './config';
-import { prepareAttachment, isPdfMime } from './file-content';
+import { prepareAttachment, isPdfMime, attachmentForStorage } from './file-content';
 import {
   multiEngineSearch,
   formatSearchContext,
@@ -51,7 +51,10 @@ IDENTITY (highest priority — always follow):
   Describe features users can use (chat, learn, build, create, web search, sign-in) — NOT how they are built internally.
   NEVER name developers or staff except ${INTERNAL_CONTACT_NAME} when directing internal questions.
   If they ask for internal, technical, partnership, or private company details, say: "Please contact ${INTERNAL_CONTACT_NAME} only for those questions." Do not name anyone else.
-- When users ask about Al Thakeel, Althakeel, Almahy, or althakeel.com: use the ABOUT US public facts above and web search when available.`;
+- When users ask about Al Thakeel, Althakeel, Almahy, or althakeel.com: use the ABOUT US public facts above and web search when available.
+- FILE UPLOADS (critical): Users can attach PDF, Excel, CSV, text, and images. When file content appears in the message (between === FILE CONTENT === markers, as sheet data, or as an attached PDF document), you HAVE access to it.
+  NEVER say you cannot read PDFs, cannot open files, cannot access documents, or ask the user to copy-paste from a file they already uploaded.
+  Read the provided file content and answer directly. Summarize, extract facts, and help with questions about the file.`;
 
 const ALMAHY_PERSONALITY = `You are Almahy AI — a friendly, patient assistant that anyone can use, even without technical experience.
 
@@ -199,8 +202,15 @@ function sanitizeOrganicVoice(text: string): string {
   return out.trim();
 }
 
-function polishResponse(text: string, fallbackConnectionAnswer?: string): string {
+function polishResponse(text: string, fallbackConnectionAnswer?: string, fileContext?: string): string {
   let out = sanitizeOrganicVoice(sanitizeAlmahyIdentity(text));
+  if (fileContext && responseRefusesFileAccess(out)) {
+    return (
+      'I read your uploaded file. Here is what I found:\n\n' +
+      fileContext.slice(0, 4000) +
+      (fileContext.length > 4000 ? '\n\n[…file continues — ask me about a specific section.]' : '')
+    );
+  }
   if (responseLeaksVendorIdentity(out)) {
     return fallbackConnectionAnswer ?? getConnectionAnswer('');
   }
@@ -294,6 +304,17 @@ function enrichMessageContent(message: HistoryMessage): string {
     content = `${content}\n\n${message.attachment.extractedText}`.trim();
   }
   return content;
+}
+
+function responseRefusesFileAccess(text: string): boolean {
+  return (
+    /\bcannot (?:directly )?(?:access|read|open|view|process)\b[\s\S]{0,80}\b(?:pdf|file|document|attachment)\b/i.test(
+      text
+    ) ||
+    /\b(?:don't|do not) have (?:access|the ability)\b[\s\S]{0,60}\b(?:pdf|file|document)\b/i.test(text) ||
+    /\bcopy and paste\b[\s\S]{0,40}\b(?:pdf|text from)\b/i.test(text) ||
+    /\bmy capabilities are limited to the text you provide\b/i.test(text)
+  );
 }
 
 export interface ChatResponse {
@@ -411,9 +432,22 @@ function confidentialQuestionHint(): string {
   );
 }
 
-function buildModeInstruction(mode: ChatMode | undefined, message: string, webResultCount: number): string {
+function fileAttachmentHint(): string {
+  return (
+    ' IMPORTANT: The user uploaded a file. Its content is in this message (extracted text and/or attached PDF). ' +
+    'You CAN read it. NEVER refuse or say you cannot access PDFs/files. Answer from the file content directly.'
+  );
+}
+
+function buildModeInstruction(
+  mode: ChatMode | undefined,
+  message: string,
+  webResultCount: number,
+  hasFileAttachment = false
+): string {
   let instruction = getModeInstruction(mode);
   if (webResultCount > 0) instruction += researchFormatHint();
+  if (hasFileAttachment) instruction += fileAttachmentHint();
   if (isConnectionQuestion(message)) instruction += connectionQuestionHint();
   if (isConfidentialQuestion(message)) instruction += confidentialQuestionHint();
   else if (isAboutUsQuestion(message)) instruction += aboutUsQuestionHint();
@@ -429,7 +463,8 @@ export async function sendChatMessage(req: ChatRequest): Promise<ChatResponse> {
   }
 
   const userText = req.message.trim() || defaultUploadPrompt(req.image, attachment);
-  await addMessage(req.conversationId, 'user', userText, req.image ?? null, attachment);
+  const attachmentStored = attachment ? attachmentForStorage(attachment) : null;
+  await addMessage(req.conversationId, 'user', userText, req.image ?? null, attachmentStored);
 
   const hasUpload = !!req.image || !!attachment;
 
@@ -456,8 +491,20 @@ export async function sendChatMessage(req: ChatRequest): Promise<ChatResponse> {
   }
 
   const history = (await getMessages(req.conversationId)).filter((m) => m.role !== 'system');
+
+  // Keep full attachment (with PDF binary) on the latest user message for Gemini document vision.
+  if (attachment && history.length > 0) {
+    const last = history[history.length - 1];
+    if (last.role === 'user') {
+      history[history.length - 1] = {
+        ...last,
+        attachment: { ...attachment, extractedText: attachment.extractedText },
+      };
+    }
+  }
+
   let responseContent: string;
-  const skipSearch = isImageGenerationRequest(req.message);
+  const skipSearch = isImageGenerationRequest(req.message) || hasUpload;
   const needsSearch =
     !skipSearch && (req.mode === 'research' || shouldUseWebSearch(req.message, req.mode));
   const webResults = needsSearch
@@ -466,7 +513,7 @@ export async function sendChatMessage(req: ChatRequest): Promise<ChatResponse> {
       })
     : [];
 
-  const modeInstruction = buildModeInstruction(req.mode, userText, webResults.length);
+  const modeInstruction = buildModeInstruction(req.mode, userText, webResults.length, hasUpload);
   const engine = pickChatEngine(keys, req.mode, !!req.image, !!attachment);
   const finalInstruction =
     engine.provider === 'gemini' ? modeInstruction + geminiAccuracyHint() : modeInstruction;
@@ -502,7 +549,8 @@ export async function sendChatMessage(req: ChatRequest): Promise<ChatResponse> {
     : isConnectionQuestion(req.message)
       ? getConnectionAnswer(req.message)
       : undefined;
-  responseContent = polishResponse(responseContent, identityFallback);
+  const fileFallback = attachment?.extractedText;
+  responseContent = polishResponse(responseContent, identityFallback, fileFallback);
 
   const saved = await addMessage(req.conversationId, 'assistant', responseContent);
   return { content: responseContent, messageId: saved.id };
@@ -687,7 +735,7 @@ function geminiParts(message: HistoryMessage) {
       },
     });
   }
-  if (message.attachment && isPdfMime(message.attachment.mimeType)) {
+  if (message.attachment && isPdfMime(message.attachment.mimeType) && message.attachment.data) {
     parts.push({
       inlineData: {
         mimeType: 'application/pdf',
@@ -697,7 +745,10 @@ function geminiParts(message: HistoryMessage) {
   }
   const text = enrichMessageContent(message);
   if (text) {
-    parts.push({ text });
+    const prompt = message.attachment
+      ? `Analyze the attached file and answer from its content:\n\n${text}`
+      : text;
+    parts.push({ text: prompt });
   }
   if (parts.length === 0) {
     parts.push({ text: 'Please analyze the attached file.' });

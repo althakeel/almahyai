@@ -83,9 +83,13 @@ export async function buildAttachmentContext(attachment: MessageAttachment): Pro
   if (isPdfMime(attachment.mimeType)) {
     const pdfText = await extractPdfText(attachment.data);
     if (pdfText) {
-      return truncate(`Attached PDF "${name}":\n\n${pdfText}`);
+      return truncate(`=== FILE CONTENT: ${name} (PDF) ===\n\n${pdfText}\n\n=== END FILE ===`);
     }
-    return `The user attached PDF file "${name}". Read and analyze the PDF content carefully.`;
+    return (
+      `=== PDF ATTACHED: ${name} ===\n` +
+      'The PDF document is attached to this message. Read and analyze it completely. ' +
+      'Summarize its contents and answer the user from the document.'
+    );
   }
 
   if (isExcelMime(attachment.mimeType)) {
@@ -112,4 +116,14 @@ export async function prepareAttachment(
 ): Promise<MessageAttachment> {
   const extractedText = await buildAttachmentContext(attachment);
   return { ...attachment, extractedText };
+}
+
+/** Store parsed text in DB — not the full base64 file (saves space). */
+export function attachmentForStorage(attachment: MessageAttachment): MessageAttachment {
+  return {
+    mimeType: attachment.mimeType,
+    filename: attachment.filename,
+    extractedText: attachment.extractedText,
+    data: '',
+  };
 }
