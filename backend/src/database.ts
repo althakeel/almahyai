@@ -66,6 +66,7 @@ export interface Message {
 export interface ApiKeys {
   openaiKey: string | null;
   geminiKey: string | null;
+  githubKey: string | null;
 }
 
 function platformConfig() {
@@ -208,10 +209,10 @@ export async function ensureFirebaseUser(
 
 async function migrateAdminKeysToPlatform(adminUserId: string): Promise<void> {
   const platform = await platformConfig().findOne({ _id: PLATFORM_CONFIG_ID });
-  if (platform?.openaiKey || platform?.geminiKey) return;
+  if (platform?.openaiKey || platform?.geminiKey || platform?.githubKey) return;
 
   const adminKeys = await getApiKeys(adminUserId);
-  if (!adminKeys.openaiKey && !adminKeys.geminiKey) return;
+  if (!adminKeys.openaiKey && !adminKeys.geminiKey && !adminKeys.githubKey) return;
 
   await savePlatformApiKeys(adminKeys);
 }
@@ -219,7 +220,7 @@ async function migrateAdminKeysToPlatform(adminUserId: string): Promise<void> {
 async function ensureUserSetup(userId: string): Promise<void> {
   const keys = await apiKeys().findOne({ userId });
   if (!keys) {
-    await apiKeys().insertOne({ userId, openaiKey: null, geminiKey: null });
+    await apiKeys().insertOne({ userId, openaiKey: null, geminiKey: null, githubKey: null });
   }
 
   const workspace = await workspaces().findOne({ userId });
@@ -248,6 +249,7 @@ export async function savePlatformApiKeys(keys: ApiKeys): Promise<void> {
   const current = await getPlatformApiKeys();
   const openai = keys.openaiKey ?? current.openaiKey;
   const gemini = keys.geminiKey ?? current.geminiKey;
+  const github = keys.githubKey ?? current.githubKey;
 
   await platformConfig().updateOne(
     { _id: PLATFORM_CONFIG_ID },
@@ -255,6 +257,7 @@ export async function savePlatformApiKeys(keys: ApiKeys): Promise<void> {
       $set: {
         openaiKey: openai ? encrypt(openai) : null,
         geminiKey: gemini ? encrypt(gemini) : null,
+        githubKey: github ? encrypt(github) : null,
         defaultProvider: DEFAULT_CHAT_PROVIDER,
         defaultModel: DEFAULT_CHAT_MODEL,
         updatedAt: new Date().toISOString(),
@@ -265,13 +268,14 @@ export async function savePlatformApiKeys(keys: ApiKeys): Promise<void> {
 }
 
 export async function getPlatformApiKeys(): Promise<ApiKeys> {
-  let keys: ApiKeys = { openaiKey: null, geminiKey: null };
+  let keys: ApiKeys = { openaiKey: null, geminiKey: null, githubKey: null };
 
   const row = await platformConfig().findOne({ _id: PLATFORM_CONFIG_ID });
-  if (row?.openaiKey || row?.geminiKey) {
+  if (row?.openaiKey || row?.geminiKey || row?.githubKey) {
     keys = {
       openaiKey: row.openaiKey ? tryDecrypt(row.openaiKey as string) : null,
       geminiKey: row.geminiKey ? tryDecrypt(row.geminiKey as string) : null,
+      githubKey: row.githubKey ? tryDecrypt(row.githubKey as string) : null,
     };
   } else {
     const adminUser = await users().findOne({ email: ADMIN_EMAIL });
@@ -283,18 +287,31 @@ export async function getPlatformApiKeys(): Promise<ApiKeys> {
   return {
     openaiKey: keys.openaiKey ?? process.env.OPENAI_API_KEY ?? null,
     geminiKey: keys.geminiKey ?? process.env.GEMINI_API_KEY ?? null,
+    githubKey: keys.githubKey ?? process.env.GITHUB_MODELS_TOKEN ?? process.env.GITHUB_COPILOT_TOKEN ?? null,
   };
 }
 
-export async function getPlatformApiKeysStatus(): Promise<{ hasOpenai: boolean; hasGemini: boolean }> {
+export async function getPlatformApiKeysStatus(): Promise<{
+  hasOpenai: boolean;
+  hasGemini: boolean;
+  hasGithub: boolean;
+  hasCopilot: boolean;
+}> {
   const keys = await getPlatformApiKeys();
-  return { hasOpenai: !!keys.openaiKey, hasGemini: !!keys.geminiKey };
+  const hasGithub = !!keys.githubKey;
+  return {
+    hasOpenai: !!keys.openaiKey,
+    hasGemini: !!keys.geminiKey,
+    hasGithub,
+    hasCopilot: hasGithub,
+  };
 }
 
 export async function saveApiKeys(userId: string, keys: ApiKeys): Promise<void> {
   const current = await getApiKeys(userId);
   const openai = keys.openaiKey ?? current.openaiKey;
   const gemini = keys.geminiKey ?? current.geminiKey;
+  const github = keys.githubKey ?? current.githubKey;
 
   await apiKeys().updateOne(
     { userId },
@@ -302,6 +319,7 @@ export async function saveApiKeys(userId: string, keys: ApiKeys): Promise<void> 
       $set: {
         openaiKey: openai ? encrypt(openai) : null,
         geminiKey: gemini ? encrypt(gemini) : null,
+        githubKey: github ? encrypt(github) : null,
       },
     },
     { upsert: true }
@@ -310,16 +328,25 @@ export async function saveApiKeys(userId: string, keys: ApiKeys): Promise<void> 
 
 export async function getApiKeys(userId: string): Promise<ApiKeys> {
   const row = await apiKeys().findOne({ userId });
-  if (!row) return { openaiKey: null, geminiKey: null };
+  if (!row) return { openaiKey: null, geminiKey: null, githubKey: null };
   return {
     openaiKey: row.openaiKey ? tryDecrypt(row.openaiKey as string) : null,
     geminiKey: row.geminiKey ? tryDecrypt(row.geminiKey as string) : null,
+    githubKey: row.githubKey ? tryDecrypt(row.githubKey as string) : null,
   };
 }
 
-export async function getApiKeysStatus(userId: string): Promise<{ hasOpenai: boolean; hasGemini: boolean }> {
+export async function getApiKeysStatus(userId: string): Promise<{
+  hasOpenai: boolean;
+  hasGemini: boolean;
+  hasGithub: boolean;
+}> {
   const row = await apiKeys().findOne({ userId });
-  return { hasOpenai: !!row?.openaiKey, hasGemini: !!row?.geminiKey };
+  return {
+    hasOpenai: !!row?.openaiKey,
+    hasGemini: !!row?.geminiKey,
+    hasGithub: !!row?.githubKey,
+  };
 }
 
 export async function getWorkspaces(userId: string): Promise<Workspace[]> {

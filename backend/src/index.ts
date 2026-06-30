@@ -20,6 +20,7 @@ import {
   getMessages,
 } from './database';
 import { sendChatMessage, sendGuestChatMessage, testOpenAIKey, testGeminiKey, OPENAI_MODELS, GEMINI_MODELS } from './ai-service';
+import { testGitHubCopilotKey } from './github-copilot';
 import { requireAuth } from './middleware/auth';
 import { requireAdmin } from './middleware/admin';
 import { getClientIp } from './middleware/client-ip';
@@ -96,6 +97,8 @@ app.get('/api/config/chat', async (_req, res) => {
       gemini: engines.hasGemini,
       chatgpt: engines.hasOpenai,
       openai: engines.hasOpenai,
+      copilot: engines.hasCopilot,
+      github: engines.hasGithub,
     },
   });
 });
@@ -107,7 +110,9 @@ app.get('/api/engines', async (_req, res) => {
     gemini: engines.hasGemini,
     chatgpt: engines.hasOpenai,
     openai: engines.hasOpenai,
-    allConnected: engines.hasGemini && engines.hasOpenai,
+    copilot: engines.hasCopilot,
+    github: engines.hasGithub,
+    allConnected: engines.hasGemini && engines.hasOpenai && engines.hasGithub,
   });
 });
 
@@ -175,8 +180,13 @@ app.get('/api/keys/status', requireAuth, requireAdmin, async (_req, res) => {
 app.post('/api/keys', requireAuth, requireAdmin, async (req, res) => {
   const openaiKey = (req.body.openaiKey as string | null) ?? null;
   const geminiKey = (req.body.geminiKey as string | null) ?? null;
-  await savePlatformApiKeys({ openaiKey, geminiKey });
+  const githubKey = (req.body.githubKey as string | null) ?? null;
+  await savePlatformApiKeys({ openaiKey, geminiKey, githubKey });
   res.json({ success: true });
+});
+
+app.post('/api/keys/test/github', requireAuth, requireAdmin, async (req, res) => {
+  res.json(await testGitHubCopilotKey(req.body.apiKey as string));
 });
 
 app.post('/api/keys/test/openai', requireAuth, requireAdmin, async (req, res) => {

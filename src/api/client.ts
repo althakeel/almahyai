@@ -125,11 +125,14 @@ export const orionApi = {
     chat: () => apiFetch<{ brandName: string; engineLabel?: string; guestLimit?: number }>('/config/chat'),
   },
   keys: {
-    status: () => apiFetch<{ hasOpenai: boolean; hasGemini: boolean }>('/keys/status'),
-    save: (openaiKey: string | null, geminiKey: string | null) =>
+    status: () =>
+      apiFetch<{ hasOpenai: boolean; hasGemini: boolean; hasGithub: boolean; hasCopilot: boolean }>(
+        '/keys/status'
+      ),
+    save: (openaiKey: string | null, geminiKey: string | null, githubKey: string | null = null) =>
       apiFetch<{ success: boolean }>('/keys', {
         method: 'POST',
-        body: JSON.stringify({ openaiKey, geminiKey }),
+        body: JSON.stringify({ openaiKey, geminiKey, githubKey }),
       }),
     testOpenai: (apiKey: string) =>
       apiFetch<{ valid: boolean; error?: string }>('/keys/test/openai', {
@@ -138,6 +141,11 @@ export const orionApi = {
       }),
     testGemini: (apiKey: string) =>
       apiFetch<{ valid: boolean; error?: string }>('/keys/test/gemini', {
+        method: 'POST',
+        body: JSON.stringify({ apiKey }),
+      }),
+    testGithub: (apiKey: string) =>
+      apiFetch<{ valid: boolean; error?: string }>('/keys/test/github', {
         method: 'POST',
         body: JSON.stringify({ apiKey }),
       }),

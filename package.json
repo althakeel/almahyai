@@ -1,6 +1,6 @@
 {
   "name": "orion-ai",
-  "version": "1.6.6",
+  "version": "1.7.0",
   "description": "Almahy AI - All-in-one AI assistant by Al Thakeel",
   "main": "dist-electron/main.js",
   "author": "Al Thakeel",

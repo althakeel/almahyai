@@ -12,6 +12,10 @@ import {
   refineImagePromptWithLLM,
 } from './image-prompt';
 import {
+  chatWithMergedEngines,
+  shouldMergeEngines,
+} from './multi-engine-chat';
+import {
   multiEngineSearch,
   formatSearchContext,
   appendSourceLinks,
@@ -217,7 +221,7 @@ function getModeInstruction(mode?: ChatMode): string {
   return MODE_INSTRUCTIONS[mode ?? 'general'] ?? MODE_INSTRUCTIONS.general;
 }
 
-type EngineKeys = { openaiKey: string | null; geminiKey: string | null };
+type EngineKeys = { openaiKey: string | null; geminiKey: string | null; githubKey: string | null };
 
 export function pickChatEngine(
   keys: EngineKeys,
@@ -628,30 +632,58 @@ export async function sendChatMessage(req: ChatRequest): Promise<ChatResponse> {
     hasUpload,
     attachment?.mimeType
   );
-  const engine = pickChatEngine(keys, req.mode, !!req.image, !!attachment);
-  const finalInstruction =
-    engine.provider === 'gemini' ? modeInstruction + geminiAccuracyHint() : modeInstruction;
+  const hasImageMedia = !!req.image || history.some((m) => m.image);
+  const searchContext = formatSearchContext(webResults);
+  const mergedInstruction = modeInstruction + geminiAccuracyHint();
+  const enableGeminiSearch = (req.mode === 'research' || webResults.length > 0) && !hasImageMedia;
 
-  if (engine.provider === 'openai') {
-    if (req.image) {
-      throw new Error('Image upload is handled by Almahy AI vision. Switch to Chat mode or remove the image.');
-    }
-    if (!keys.openaiKey) {
-      throw new Error('Almahy AI is not ready yet. The administrator needs to configure the engine API key.');
-    }
-    responseContent = await chatOpenAI(keys.openaiKey, engine.model, history, webResults, finalInstruction);
-  } else {
-    if (!keys.geminiKey) {
-      throw new Error('Almahy AI is not ready yet. The administrator needs to configure the engine API key.');
-    }
-    responseContent = await chatGemini(
-      keys.geminiKey,
-      engine.model,
+  if (shouldMergeEngines(keys, hasImageMedia)) {
+    responseContent = await chatWithMergedEngines(
+      keys,
       history,
-      webResults,
-      finalInstruction,
-      req.mode === 'research' || webResults.length > 0
+      searchContext,
+      mergedInstruction,
+      userText,
+      {
+        chatGemini: () =>
+          chatGemini(
+            keys.geminiKey!,
+            DEFAULT_CHAT_MODEL,
+            history,
+            webResults,
+            mergedInstruction,
+            enableGeminiSearch
+          ),
+        chatOpenAI: () => chatOpenAI(keys.openaiKey!, 'gpt-4o-mini', history, webResults, modeInstruction),
+      },
+      hasImageMedia
     );
+  } else {
+    const engine = pickChatEngine(keys, req.mode, !!req.image, !!attachment);
+    const finalInstruction =
+      engine.provider === 'gemini' ? mergedInstruction : modeInstruction;
+
+    if (engine.provider === 'openai') {
+      if (req.image) {
+        throw new Error('Image upload is handled by Almahy AI vision. Switch to Chat mode or remove the image.');
+      }
+      if (!keys.openaiKey) {
+        throw new Error('Almahy AI is not ready yet. The administrator needs to configure the engine API key.');
+      }
+      responseContent = await chatOpenAI(keys.openaiKey, engine.model, history, webResults, finalInstruction);
+    } else {
+      if (!keys.geminiKey) {
+        throw new Error('Almahy AI is not ready yet. The administrator needs to configure the engine API key.');
+      }
+      responseContent = await chatGemini(
+        keys.geminiKey,
+        engine.model,
+        history,
+        webResults,
+        finalInstruction,
+        enableGeminiSearch
+      );
+    }
   }
 
   if (webResults.length > 0 && !responseContent.includes('http')) {
@@ -702,7 +734,7 @@ export async function sendGuestChatMessage(req: GuestChatRequest): Promise<strin
   }
 
   const keys = await getPlatformApiKeys();
-  if (!keys.geminiKey && !keys.openaiKey) {
+  if (!keys.geminiKey && !keys.openaiKey && !keys.githubKey) {
     throw new Error('Almahy AI is not ready yet. The administrator needs to add an API key.');
   }
 
@@ -726,29 +758,55 @@ export async function sendGuestChatMessage(req: GuestChatRequest): Promise<strin
     buildModeInstruction(req.mode, req.message, webResults.length) +
     ' The user is on a free guest session. Be concise, warm, and helpful. Use simple language.';
 
-  const engine = pickChatEngine(keys, req.mode);
-  const finalInstruction =
-    engine.provider === 'gemini' ? modeInstruction + geminiAccuracyHint() : modeInstruction;
-
+  const mergedInstruction = modeInstruction + geminiAccuracyHint();
+  const searchContext = formatSearchContext(webResults);
   let responseContent: string;
 
-  if (engine.provider === 'openai') {
-    responseContent = await chatOpenAI(
-      keys.openaiKey!,
-      engine.model,
+  if (shouldMergeEngines(keys, false)) {
+    responseContent = await chatWithMergedEngines(
+      keys,
       history,
-      webResults,
-      finalInstruction
+      searchContext,
+      mergedInstruction,
+      req.message,
+      {
+        chatGemini: () =>
+          chatGemini(
+            keys.geminiKey!,
+            DEFAULT_CHAT_MODEL,
+            history,
+            webResults,
+            mergedInstruction,
+            req.mode === 'research' || webResults.length > 0
+          ),
+        chatOpenAI: () =>
+          chatOpenAI(keys.openaiKey!, 'gpt-4o-mini', history, webResults, modeInstruction),
+      },
+      false
     );
   } else {
-    responseContent = await chatGemini(
-      keys.geminiKey!,
-      engine.model,
-      history,
-      webResults,
-      finalInstruction,
-      req.mode === 'research' || webResults.length > 0
-    );
+    const engine = pickChatEngine(keys, req.mode);
+    const finalInstruction =
+      engine.provider === 'gemini' ? mergedInstruction : modeInstruction;
+
+    if (engine.provider === 'openai') {
+      responseContent = await chatOpenAI(
+        keys.openaiKey!,
+        engine.model,
+        history,
+        webResults,
+        finalInstruction
+      );
+    } else {
+      responseContent = await chatGemini(
+        keys.geminiKey!,
+        engine.model,
+        history,
+        webResults,
+        finalInstruction,
+        req.mode === 'research' || webResults.length > 0
+      );
+    }
   }
 
   if (webResults.length > 0 && !responseContent.includes('http')) {
