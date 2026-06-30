@@ -6,6 +6,12 @@ import { prepareAttachment, isPdfMime, isExcelMime, attachmentForStorage } from 
 import { detectFileConversion, runFileConversion, conversionSuccessMessage } from './file-conversions';
 import { getPublicLegalSummary, getSupportedConversionsText } from './legal-info';
 import {
+  enhanceImagePrompt,
+  naturalImageCaption,
+  pickDalleImageSize,
+  refineImagePromptWithLLM,
+} from './image-prompt';
+import {
   multiEngineSearch,
   formatSearchContext,
   appendSourceLinks,
@@ -157,54 +163,6 @@ function sanitizeAlmahyIdentity(text: string): string {
   return out;
 }
 
-const ORGANIC_IMAGE_STYLE = `
-Ultra-photorealistic photograph — indistinguishable from a real camera or smartphone photo.
-Natural ambient light, accurate skin texture, realistic hair and fabric, shallow depth of field.
-Candid lifestyle composition like a real Instagram or iPhone photo — NOT stock-photo clichés, NOT 3D/CGI look.
-No watermark, no text overlay, no distorted hands or extra fingers.`;
-
-function wantsPhotorealisticImage(prompt: string): boolean {
-  return /\b(realistic|photo|photograph|photorealistic|lifelike|real life|camera|iphone|selfie|portrait|natural|dslr|mirror)\b/i.test(
-    prompt
-  );
-}
-
-function pickDalleImageSize(prompt: string): '1024x1024' | '1792x1024' | '1024x1792' {
-  if (/\b(portrait|selfie|standing|full body|person|girl|woman|man|boy|holding phone|mirror)\b/i.test(prompt)) {
-    return '1024x1792';
-  }
-  if (/\b(landscape|panorama|wide|sunset|mountains|cityscape|beach horizon)\b/i.test(prompt)) {
-    return '1792x1024';
-  }
-  return '1024x1024';
-}
-
-function enhanceImagePrompt(userPrompt: string): string {
-  const text = userPrompt.trim();
-  const wantsStylized =
-    /\b(cartoon|anime|illustration|drawing|painting|logo|icon|pixel|3d render|fantasy|sci-?fi|futuristic|neon|abstract|artistic)\b/i.test(
-      text
-    );
-  if (wantsStylized) {
-    return `${text}\n\nHigh quality, polished result. Natural composition and believable details.`;
-  }
-  if (wantsPhotorealisticImage(text)) {
-    return `${text}\n\n${ORGANIC_IMAGE_STYLE}`;
-  }
-  return `${text}\n\n${ORGANIC_IMAGE_STYLE}`;
-}
-
-function naturalImageCaption(userPrompt: string): string {
-  const topic = userPrompt
-    .replace(/\b(generate|create|draw|make|design|render|produce|an?)\b/gi, ' ')
-    .replace(/\b(image|picture|photo|illustration|of)\b/gi, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-  if (topic.length > 3 && topic.length < 120) {
-    return `Here you go — ${topic}.`;
-  }
-  return 'Here you go.';
-}
 
 function sanitizeOrganicVoice(text: string): string {
   let out = text;
@@ -812,18 +770,25 @@ async function generateImage(
   prompt: string
 ): Promise<{ text: string; image: MessageImage | null }> {
   const errors: string[] = [];
+  const refined = await refineImagePromptWithLLM(keys, prompt);
 
   if (keys.openaiKey) {
-    try {
-      return await generateOpenAIImage(keys.openaiKey, prompt, { quality: 'hd', style: 'natural' });
-    } catch (err: unknown) {
-      errors.push(err instanceof Error ? err.message : 'OpenAI image failed');
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const strict =
+          attempt === 1
+            ? '\n\nSTRICT: five fingers per hand, phone screen shows camera UI or mirror reflection of same person only — no unrelated people on screen.'
+            : '';
+        return await generateOpenAIImage(keys.openaiKey, refined + strict, { quality: 'hd', style: 'natural' });
+      } catch (err: unknown) {
+        errors.push(err instanceof Error ? err.message : 'OpenAI image failed');
+      }
     }
   }
 
   if (keys.geminiKey) {
     try {
-      return await generateGeminiImage(keys.geminiKey, prompt);
+      return await generateGeminiImage(keys.geminiKey, refined);
     } catch (err: unknown) {
       errors.push(err instanceof Error ? err.message : 'Gemini image failed');
     }
@@ -832,7 +797,7 @@ async function generateImage(
   if (errors.length > 0) {
     throw new Error(
       errors[0] ??
-        'Could not generate an image. Add a ChatGPT (OpenAI) API key in Engine Settings for ChatGPT-quality photos.'
+        'Could not generate an image. Add a ChatGPT (OpenAI) API key in Engine Settings for the most accurate photos.'
     );
   }
 
