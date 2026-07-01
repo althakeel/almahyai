@@ -1038,7 +1038,7 @@ input, textarea, select {
   height: 56px;
   margin: 0 auto 16px;
   border-radius: 16px;
-  background: linear-gradient(135deg, #10a37f 0%, #0d8a6a 100%);
+  background: linear-gradient(135deg, #10a37f 0%, #0d8a6a 50%, #7c3aed 100%);
   color: #fff;
   font-size: 26px;
   font-weight: 700;
@@ -1046,6 +1046,89 @@ input, textarea, select {
   align-items: center;
   justify-content: center;
   box-shadow: 0 8px 28px rgba(16, 163, 127, 0.3);
+}
+
+.chat-welcome-icon.pulse-glow,
+.chat-avatar.pulse-glow {
+  animation: welcome-pulse 2.2s ease-in-out infinite;
+}
+
+@keyframes welcome-pulse {
+  0%, 100% { box-shadow: 0 8px 28px rgba(16, 163, 127, 0.3); transform: scale(1); }
+  50% { box-shadow: 0 8px 36px rgba(124, 58, 237, 0.35); transform: scale(1.03); }
+}
+
+.neural-merge-badge {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: #a78bfa;
+  padding: 6px 14px;
+  margin-bottom: 12px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, rgba(167, 139, 250, 0.15), rgba(16, 163, 127, 0.12));
+  border: 1px solid rgba(167, 139, 250, 0.35);
+}
+
+.almahy-feature-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  max-width: 520px;
+  margin: 20px auto 24px;
+}
+
+@media (max-width: 600px) {
+  .almahy-feature-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.almahy-feature-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 14px 10px;
+  border-radius: 12px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  transition: border-color 0.2s, transform 0.2s;
+}
+
+.almahy-feature-card:hover {
+  border-color: rgba(16, 163, 127, 0.45);
+  transform: translateY(-2px);
+}
+
+.almahy-feature-icon {
+  font-size: 22px;
+  line-height: 1;
+}
+
+.almahy-feature-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.almahy-feature-desc {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.typing-dots span {
+  animation: typing-blink 1.2s infinite;
+  opacity: 0.3;
+}
+
+.typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+.typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes typing-blink {
+  0%, 60%, 100% { opacity: 0.25; }
+  30% { opacity: 1; }
 }
 
 .chat-mode-bar-wrap {
@@ -1713,6 +1796,19 @@ input, textarea, select {
   font-size: 15px;
   font-weight: 600;
   color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.brand-version {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-muted);
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
 }
 
 .admin-badge {
@@ -1910,6 +2006,18 @@ input, textarea, select {
 
 .status-pill.model {
   color: var(--gemini);
+}
+
+.status-pill.neural {
+  color: #a78bfa;
+  border-color: rgba(167, 139, 250, 0.45);
+  background: rgba(167, 139, 250, 0.12);
+  animation: neural-glow 2.5s ease-in-out infinite;
+}
+
+@keyframes neural-glow {
+  0%, 100% { box-shadow: 0 0 0 rgba(167, 139, 250, 0); }
+  50% { box-shadow: 0 0 12px rgba(167, 139, 250, 0.35); }
 }
 
 .top-bar-actions {

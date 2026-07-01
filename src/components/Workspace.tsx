@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef, lazy, Suspense, useMemo } fro
 import type { User, Workspace as WorkspaceType, Conversation } from '../types';
 import ChatPanel from './ChatPanel';
 import ConfirmDialog from './ConfirmDialog';
-import { orionApi, checkBackendHealth } from '../api/client';
+import { orionApi, checkBackendHealth, fetchEngineStatus, type EngineStatus } from '../api/client';
 import { useTheme } from '../hooks/useTheme';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
 
@@ -25,6 +25,7 @@ export default function Workspace({ user, onLogout, onUserUpdate }: Props) {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
   const [serverOnline, setServerOnline] = useState(true);
+  const [engines, setEngines] = useState<EngineStatus | null>(null);
   const provider = 'gemini' as const;
   const model = 'gemini-2.5-flash';
   const [loading, setLoading] = useState(true);
@@ -38,7 +39,11 @@ export default function Workspace({ user, onLogout, onUserUpdate }: Props) {
 
   useEffect(() => {
     checkBackendHealth().then(setServerOnline);
-    const interval = window.setInterval(() => checkBackendHealth().then(setServerOnline), 60000);
+    fetchEngineStatus().then(setEngines);
+    const interval = window.setInterval(() => {
+      checkBackendHealth().then(setServerOnline);
+      fetchEngineStatus().then(setEngines);
+    }, 60000);
     return () => window.clearInterval(interval);
   }, []);
 
@@ -316,10 +321,18 @@ export default function Workspace({ user, onLogout, onUserUpdate }: Props) {
 
           {view === 'chat' && (
             <>
-              <div className="brand-title">Almahy AI</div>
+              <div className="brand-title">
+                Almahy AI
+                <span className="brand-version">v1.7.2</span>
+              </div>
               <div className="top-bar-status">
+                {engines?.allConnected && (
+                  <span className="status-pill neural" title="Gemini + ChatGPT + Copilot merge every answer">
+                    ◆ Neural Merge
+                  </span>
+                )}
                 <span className={`status-pill ${serverOnline ? 'online' : 'offline'}`}>
-                  {serverOnline ? '● Ready' : '● Offline'}
+                  {serverOnline ? '● Online' : '● Offline'}
                 </span>
               </div>
             </>
@@ -371,6 +384,7 @@ export default function Workspace({ user, onLogout, onUserUpdate }: Props) {
             conversation={activeConversation}
             userName={user.displayName}
             simpleMode={!user.isAdmin}
+            engineStatus={engines}
             onTitleUpdate={(title) => {
               setConversations((prev) =>
                 prev.map((c) => (c.id === activeConversation.id ? { ...c, title } : c))

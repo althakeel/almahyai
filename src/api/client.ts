@@ -97,6 +97,25 @@ export async function checkGuestApiAvailable(timeoutMs = 5000): Promise<boolean>
   }
 }
 
+export interface EngineStatus {
+  gemini: boolean;
+  chatgpt: boolean;
+  openai: boolean;
+  copilot: boolean;
+  github: boolean;
+  allConnected: boolean;
+}
+
+export async function fetchEngineStatus(timeoutMs = 5000): Promise<EngineStatus | null> {
+  try {
+    const res = await fetch(`${API_BASE}/engines`, { signal: AbortSignal.timeout(timeoutMs) });
+    if (!res.ok) return null;
+    return (await res.json()) as EngineStatus;
+  } catch {
+    return null;
+  }
+}
+
 export const orionApi = {
   auth: {
     syncFirebaseUser: async (displayName: string) => {

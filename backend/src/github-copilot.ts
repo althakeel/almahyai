@@ -48,6 +48,40 @@ export async function testGitHubCopilotKey(apiKey: string): Promise<{ valid: boo
   }
 }
 
+export async function chatGitHubCopilotWorker(
+  apiKey: string,
+  question: string,
+  systemInstruction: string,
+  maxTokens: number
+): Promise<string> {
+  const response = await fetch(GITHUB_MODELS_URL, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: GITHUB_CHAT_MODEL,
+      messages: [
+        { role: 'system', content: systemInstruction },
+        { role: 'user', content: question },
+      ],
+      temperature: 0.55,
+      max_tokens: maxTokens,
+    }),
+  });
+
+  if (!response.ok) {
+    const detail = (await response.text()).slice(0, 240);
+    throw new Error(detail || `GitHub Copilot Models error (${response.status})`);
+  }
+
+  const data = (await response.json()) as {
+    choices?: Array<{ message?: { content?: string } }>;
+  };
+  return data.choices?.[0]?.message?.content?.trim() || 'No response received.';
+}
+
 export async function chatGitHubCopilot(
   apiKey: string,
   messages: SimpleHistoryMessage[],

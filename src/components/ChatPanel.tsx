@@ -1,6 +1,6 @@
 import { memo, useState, useEffect, useRef, useCallback, KeyboardEvent, ChangeEvent, DragEvent } from 'react';
 import type { Conversation, Message, MessageImage, MessageAttachment, ChatMode } from '../types';
-import { orionApi } from '../api/client';
+import { orionApi, type EngineStatus } from '../api/client';
 import MarkdownMessage from './MarkdownMessage';
 import ConfirmDialog from './ConfirmDialog';
 import QuickPrompts from './QuickPrompts';
@@ -113,6 +113,7 @@ interface Props {
   conversation: Conversation;
   userName: string;
   simpleMode?: boolean;
+  engineStatus?: EngineStatus | null;
   guestMode?: boolean;
   guestRemaining?: number;
   guestLimit?: number;
@@ -336,6 +337,7 @@ export default function ChatPanel({
   conversation,
   userName,
   simpleMode: _simpleMode = false,
+  engineStatus = null,
   guestMode = false,
   guestRemaining = 0,
   guestLimit = 20,
@@ -1051,9 +1053,40 @@ export default function ChatPanel({
               </>
             ) : (
               <>
-                <div className="chat-welcome-icon">A</div>
-                <h2>Hi! How can I help you today?</h2>
-                <p>Chat, learn, build, or create — pick a mode or tap a suggestion below.</p>
+                <div className="chat-welcome-icon pulse-glow">A</div>
+                {engineStatus?.allConnected && (
+                  <div className="neural-merge-badge">◆ Neural Merge Active</div>
+                )}
+                <h2>Hi{userName ? `, ${userName.split(' ')[0]}` : ''}! How can I help?</h2>
+                <p>
+                  {engineStatus?.allConnected
+                    ? 'Three AI engines work together — Almahy merges them into one accurate answer.'
+                    : 'Chat, learn, build, or create — pick a mode or tap a suggestion below.'}
+                </p>
+                <div className="almahy-feature-grid">
+                  <div className="almahy-feature-card">
+                    <span className="almahy-feature-icon">🧠</span>
+                    <span className="almahy-feature-title">Neural Merge</span>
+                    <span className="almahy-feature-desc">
+                      {engineStatus?.allConnected ? '3 engines live' : 'Multi-AI answers'}
+                    </span>
+                  </div>
+                  <div className="almahy-feature-card">
+                    <span className="almahy-feature-icon">🖼</span>
+                    <span className="almahy-feature-title">HD Images</span>
+                    <span className="almahy-feature-desc">DALL·E quality</span>
+                  </div>
+                  <div className="almahy-feature-card">
+                    <span className="almahy-feature-icon">📄</span>
+                    <span className="almahy-feature-title">Files</span>
+                    <span className="almahy-feature-desc">PDF & Excel</span>
+                  </div>
+                  <div className="almahy-feature-card">
+                    <span className="almahy-feature-icon">⚡</span>
+                    <span className="almahy-feature-title">Smart</span>
+                    <span className="almahy-feature-desc">Fast & accurate</span>
+                  </div>
+                </div>
                 <QuickPrompts prompts={QUICK_PROMPTS} onSelect={handleQuickPrompt} />
               </>
             )}
@@ -1079,9 +1112,16 @@ export default function ChatPanel({
 
         {sending && (
           <div className="chat-row assistant">
-            <div className="chat-avatar assistant">A</div>
+            <div className="chat-avatar assistant pulse-glow">A</div>
             <div className="chat-bubble">
-              <p className="typing-label">Agent is thinking…</p>
+              <p className="typing-label">
+                Almahy AI is thinking
+                <span className="typing-dots" aria-hidden="true">
+                  <span>.</span>
+                  <span>.</span>
+                  <span>.</span>
+                </span>
+              </p>
               <div className="typing-indicator">
                 <span /><span /><span />
               </div>

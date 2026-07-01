@@ -14,7 +14,17 @@ import {
 import {
   chatWithMergedEngines,
   shouldMergeEngines,
+  buildWorkerSystem,
 } from './multi-engine-chat';
+import {
+  buildLeanWorkerQuestion,
+  buildSynthesisModeHint,
+  pickWorkerModel,
+  SINGLE_ENGINE_MAX_TOKENS,
+  WORKER_MAX_TOKENS,
+  ALMAHY_SYNTHESIS_SYSTEM,
+  type ChatMode,
+} from './engine-prompts';
 import {
   multiEngineSearch,
   formatSearchContext,
@@ -34,7 +44,7 @@ export interface ChatRequest {
   mode?: ChatMode;
 }
 
-export type ChatMode = 'general' | 'research' | 'code' | 'creative';
+export type { ChatMode };
 
 const INTERNAL_CONTACT_NAME = 'Rohith';
 
@@ -528,25 +538,48 @@ function pdfCreationHint(): string {
   );
 }
 
-function buildModeInstruction(
+function buildWorkerExtras(
+  message: string,
+  hasFileAttachment: boolean,
+  attachmentMime?: string
+): string {
+  let extra = '';
+  if (hasFileAttachment) {
+    extra += ' The file content is in the user message — read it directly.';
+    if (attachmentMime && isPdfMime(attachmentMime)) extra += ' PDF edits: output full revised text.';
+    if (attachmentMime && isExcelMime(attachmentMime)) extra += ' Excel edits: output markdown tables.';
+  }
+  if (isConnectionQuestion(message)) extra += ' Answer as Almahy AI from Al Thakeel only.';
+  if (isConfidentialQuestion(message)) {
+    extra += ` Say internal details are confidential; contact ${INTERNAL_CONTACT_NAME} only.`;
+  }
+  return extra;
+}
+
+function buildSynthesisExtras(
   mode: ChatMode | undefined,
   message: string,
   webResultCount: number,
-  hasFileAttachment = false,
+  hasFileAttachment: boolean,
   attachmentMime?: string
 ): string {
-  let instruction = getModeInstruction(mode);
-  if (webResultCount > 0) instruction += researchFormatHint();
-  if (hasFileAttachment) instruction += fileAttachmentHint(attachmentMime);
-  else if (/\b(pdf|document|report|letter|proposal)\b/i.test(message)) instruction += pdfCreationHint();
-  else if (/\b(excel|spreadsheet|xlsx|xls|csv|worksheet|workbook)\b/i.test(message)) instruction += excelCreationHint();
-  if (isConnectionQuestion(message)) instruction += connectionQuestionHint();
-  else if (isConfidentialQuestion(message)) instruction += confidentialQuestionHint();
-  else if (isAboutUsQuestion(message)) instruction += aboutUsQuestionHint();
-  if (!hasFileAttachment && /\b(image|picture|photo|draw|illustration|portrait)\b/i.test(message)) {
-    instruction += noFakeImageHint();
+  let extra = buildSynthesisModeHint(mode);
+  if (webResultCount > 0) extra += researchFormatHint();
+  if (hasFileAttachment) extra += fileAttachmentHint(attachmentMime);
+  else if (/\b(pdf|document|report|letter|proposal)\b/i.test(message)) extra += pdfCreationHint();
+  else if (/\b(excel|spreadsheet|xlsx|xls|csv|worksheet|workbook)\b/i.test(message)) {
+    extra += excelCreationHint();
   }
-  return instruction;
+  if (isAboutUsQuestion(message)) extra += aboutUsQuestionHint();
+  return extra;
+}
+
+function latestUserMedia(history: HistoryMessage[]): HistoryMessage | undefined {
+  for (let i = history.length - 1; i >= 0; i -= 1) {
+    const m = history[i];
+    if (m.role === 'user' && (m.image || m.attachment)) return m;
+  }
+  return undefined;
 }
 
 export async function sendChatMessage(req: ChatRequest): Promise<ChatResponse> {
@@ -625,7 +658,10 @@ export async function sendChatMessage(req: ChatRequest): Promise<ChatResponse> {
       })
     : [];
 
-  const modeInstruction = buildModeInstruction(
+  const searchContext = formatSearchContext(webResults);
+  const workerSystem =
+    buildWorkerSystem(req.mode) + buildWorkerExtras(userText, hasUpload, attachment?.mimeType);
+  const synthesisHint = buildSynthesisExtras(
     req.mode,
     userText,
     webResults.length,
@@ -633,35 +669,39 @@ export async function sendChatMessage(req: ChatRequest): Promise<ChatResponse> {
     attachment?.mimeType
   );
   const hasImageMedia = !!req.image || history.some((m) => m.image);
-  const searchContext = formatSearchContext(webResults);
-  const mergedInstruction = modeInstruction + geminiAccuracyHint();
   const enableGeminiSearch = (req.mode === 'research' || webResults.length > 0) && !hasImageMedia;
+  const models = pickWorkerModel(req.mode);
+  const fileExtract = attachment?.extractedText;
+  const leanQuestion = buildLeanWorkerQuestion(userText, history, searchContext, fileExtract);
+  const mediaMessage = latestUserMedia(history);
 
   if (shouldMergeEngines(keys, hasImageMedia)) {
     responseContent = await chatWithMergedEngines(
       keys,
       history,
       searchContext,
-      mergedInstruction,
+      workerSystem,
+      synthesisHint,
       userText,
       {
-        chatGemini: () =>
-          chatGemini(
+        chatGemini: (question) =>
+          chatGeminiLean(
             keys.geminiKey!,
-            DEFAULT_CHAT_MODEL,
-            history,
-            webResults,
-            mergedInstruction,
-            enableGeminiSearch
+            models.gemini,
+            question,
+            workerSystem,
+            WORKER_MAX_TOKENS,
+            enableGeminiSearch,
+            mediaMessage
           ),
-        chatOpenAI: () => chatOpenAI(keys.openaiKey!, 'gpt-4o-mini', history, webResults, modeInstruction),
+        chatOpenAI: (question) =>
+          chatOpenAILean(keys.openaiKey!, models.openai, question, workerSystem, WORKER_MAX_TOKENS),
       },
       hasImageMedia
     );
   } else {
     const engine = pickChatEngine(keys, req.mode, !!req.image, !!attachment);
-    const finalInstruction =
-      engine.provider === 'gemini' ? mergedInstruction : modeInstruction;
+    const singleSystem = `${ALMAHY_SYNTHESIS_SYSTEM} ${synthesisHint}`;
 
     if (engine.provider === 'openai') {
       if (req.image) {
@@ -670,18 +710,25 @@ export async function sendChatMessage(req: ChatRequest): Promise<ChatResponse> {
       if (!keys.openaiKey) {
         throw new Error('Almahy AI is not ready yet. The administrator needs to configure the engine API key.');
       }
-      responseContent = await chatOpenAI(keys.openaiKey, engine.model, history, webResults, finalInstruction);
+      responseContent = await chatOpenAILean(
+        keys.openaiKey,
+        engine.model,
+        leanQuestion,
+        singleSystem,
+        SINGLE_ENGINE_MAX_TOKENS
+      );
     } else {
       if (!keys.geminiKey) {
         throw new Error('Almahy AI is not ready yet. The administrator needs to configure the engine API key.');
       }
-      responseContent = await chatGemini(
+      responseContent = await chatGeminiLean(
         keys.geminiKey,
         engine.model,
-        history,
-        webResults,
-        finalInstruction,
-        enableGeminiSearch
+        leanQuestion,
+        singleSystem,
+        SINGLE_ENGINE_MAX_TOKENS,
+        enableGeminiSearch,
+        mediaMessage
       );
     }
   }
@@ -740,10 +787,8 @@ export async function sendGuestChatMessage(req: GuestChatRequest): Promise<strin
 
   const priorHistory: HistoryMessage[] = req.history
     .filter((m) => m.role === 'user' || m.role === 'assistant')
-    .slice(-10)
+    .slice(-4)
     .map((m) => ({ role: m.role, content: m.content }));
-
-  const history: HistoryMessage[] = [...priorHistory, { role: 'user', content: req.message }];
 
   const skipSearch = isImageGenerationRequest(req.message);
   const needsSearch =
@@ -754,56 +799,60 @@ export async function sendGuestChatMessage(req: GuestChatRequest): Promise<strin
       })
     : [];
 
-  const modeInstruction =
-    buildModeInstruction(req.mode, req.message, webResults.length) +
-    ' The user is on a free guest session. Be concise, warm, and helpful. Use simple language.';
-
-  const mergedInstruction = modeInstruction + geminiAccuracyHint();
   const searchContext = formatSearchContext(webResults);
+  const workerSystem =
+    buildWorkerSystem(req.mode) +
+    buildWorkerExtras(req.message, false) +
+    ' Guest session: be concise and warm.';
+  const synthesisHint =
+    buildSynthesisExtras(req.mode, req.message, webResults.length, false) +
+    ' Guest session: keep the answer short.';
+  const models = pickWorkerModel(req.mode);
+  const leanQuestion = buildLeanWorkerQuestion(req.message, priorHistory, searchContext);
   let responseContent: string;
 
   if (shouldMergeEngines(keys, false)) {
     responseContent = await chatWithMergedEngines(
       keys,
-      history,
+      priorHistory,
       searchContext,
-      mergedInstruction,
+      workerSystem,
+      synthesisHint,
       req.message,
       {
-        chatGemini: () =>
-          chatGemini(
+        chatGemini: (question) =>
+          chatGeminiLean(
             keys.geminiKey!,
-            DEFAULT_CHAT_MODEL,
-            history,
-            webResults,
-            mergedInstruction,
+            models.gemini,
+            question,
+            workerSystem,
+            WORKER_MAX_TOKENS,
             req.mode === 'research' || webResults.length > 0
           ),
-        chatOpenAI: () =>
-          chatOpenAI(keys.openaiKey!, 'gpt-4o-mini', history, webResults, modeInstruction),
+        chatOpenAI: (question) =>
+          chatOpenAILean(keys.openaiKey!, models.openai, question, workerSystem, WORKER_MAX_TOKENS),
       },
       false
     );
   } else {
     const engine = pickChatEngine(keys, req.mode);
-    const finalInstruction =
-      engine.provider === 'gemini' ? mergedInstruction : modeInstruction;
+    const singleSystem = `${ALMAHY_SYNTHESIS_SYSTEM} ${synthesisHint}`;
 
     if (engine.provider === 'openai') {
-      responseContent = await chatOpenAI(
+      responseContent = await chatOpenAILean(
         keys.openaiKey!,
         engine.model,
-        history,
-        webResults,
-        finalInstruction
+        leanQuestion,
+        singleSystem,
+        SINGLE_ENGINE_MAX_TOKENS
       );
     } else {
-      responseContent = await chatGemini(
+      responseContent = await chatGeminiLean(
         keys.geminiKey!,
         engine.model,
-        history,
-        webResults,
-        finalInstruction,
+        leanQuestion,
+        singleSystem,
+        SINGLE_ENGINE_MAX_TOKENS,
         req.mode === 'research' || webResults.length > 0
       );
     }
@@ -952,29 +1001,22 @@ async function generateGeminiImage(
   throw new Error('Could not generate an image. Try a clearer prompt like "a sunset over mountains".');
 }
 
-async function chatOpenAI(
+async function chatOpenAILean(
   apiKey: string,
   model: string,
-  messages: HistoryMessage[],
-  webResults: Awaited<ReturnType<typeof multiEngineSearch>>,
-  modeInstruction: string
+  question: string,
+  systemInstruction: string,
+  maxTokens: number
 ): Promise<string> {
   const client = new OpenAI({ apiKey });
-  const searchContext = formatSearchContext(webResults);
-  const mapped = messages.map((m, index) => {
-    let content = enrichMessageContent(m);
-    if (searchContext && index === messages.length - 1 && m.role === 'user') {
-      content = `${searchContext}\n\nUser question:\n${content}`;
-    }
-    return {
-      role: m.role as 'user' | 'assistant' | 'system',
-      content,
-    };
-  });
-
   const response = await client.chat.completions.create({
     model,
-    messages: [{ role: 'system', content: modeInstruction }, ...mapped],
+    max_tokens: maxTokens,
+    temperature: 0.55,
+    messages: [
+      { role: 'system', content: systemInstruction },
+      { role: 'user', content: question },
+    ],
   });
   return response.choices[0]?.message?.content ?? 'No response received.';
 }
@@ -1010,41 +1052,40 @@ function geminiParts(message: HistoryMessage) {
   return parts;
 }
 
-async function chatGemini(
+async function chatGeminiLean(
   apiKey: string,
   model: string,
-  messages: HistoryMessage[],
-  webResults: Awaited<ReturnType<typeof multiEngineSearch>>,
-  modeInstruction: string,
-  enableGoogleSearch = false
+  question: string,
+  systemInstruction: string,
+  maxTokens: number,
+  enableGoogleSearch = false,
+  mediaMessage?: HistoryMessage
 ): Promise<string> {
   const ai = new GoogleGenAI({ apiKey });
-  const searchContext = formatSearchContext(webResults);
-  const hasMedia = messages.some((m) => m.image || m.attachment);
+  const hasMedia = !!mediaMessage?.image || !!mediaMessage?.attachment;
 
-  const contents = messages.map((m, index) => {
-    const parts = geminiParts(m);
-    if (searchContext && index === messages.length - 1 && m.role === 'user') {
-      parts.unshift({ text: searchContext });
-    }
-    return {
-      role: m.role === 'assistant' ? 'model' : 'user',
-      parts,
-    };
-  });
+  const contents = hasMedia && mediaMessage
+    ? [{ role: 'user', parts: geminiParts({ ...mediaMessage, content: question }) }]
+    : [{ role: 'user', parts: [{ text: question }] }];
 
   const config: {
     systemInstruction?: string;
     tools?: Array<{ googleSearch: Record<string, never> }>;
+    maxOutputTokens?: number;
   } = {
-    systemInstruction: modeInstruction,
+    systemInstruction: systemInstruction,
+    maxOutputTokens: maxTokens,
   };
 
   if (enableGoogleSearch && !hasMedia) {
     config.tools = [{ googleSearch: {} }];
   }
 
-  const response = await ai.models.generateContent({ model, contents, config });
+  const response = await ai.models.generateContent({
+    model,
+    contents,
+    config,
+  });
   return response.text ?? 'No response received.';
 }
 
