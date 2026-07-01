@@ -26,6 +26,7 @@ export default function Workspace({ user, onLogout, onUserUpdate }: Props) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [serverOnline, setServerOnline] = useState(true);
   const [engines, setEngines] = useState<EngineStatus | null>(null);
+  const serverNeedsUpdate = serverOnline && engines === null;
   const provider = 'gemini' as const;
   const model = 'gemini-2.5-flash';
   const [loading, setLoading] = useState(true);
@@ -33,6 +34,7 @@ export default function Workspace({ user, onLogout, onUserUpdate }: Props) {
   const [error, setError] = useState('');
   const [pendingDelete, setPendingDelete] = useState<{ id: string; title?: string } | null>(null);
   const [pendingDeleteAll, setPendingDeleteAll] = useState(false);
+  const [deleteAllError, setDeleteAllError] = useState('');
   const [deleting, setDeleting] = useState(false);
   const bootstrapped = useRef(false);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -165,21 +167,44 @@ export default function Workspace({ user, onLogout, onUserUpdate }: Props) {
 
   const handleDeleteAllHistory = () => {
     if (conversations.length === 0) return;
+    setDeleteAllError('');
     setPendingDeleteAll(true);
+  };
+
+  const deleteAllConversations = async () => {
+    const results = await Promise.allSettled(
+      conversations.map((c) => orionApi.conversation.delete(c.id))
+    );
+    const failed = results.filter((r) => r.status === 'rejected');
+    if (failed.length === results.length) {
+      const reason = failed[0].status === 'rejected' ? failed[0].reason : null;
+      throw reason instanceof Error ? reason : new Error('Could not delete chats');
+    }
   };
 
   const confirmDeleteAllHistory = async () => {
     setDeleting(true);
+    setDeleteAllError('');
     try {
       const workspace = await ensureWorkspace();
-      await orionApi.conversation.deleteAll(workspace.id);
+      await deleteAllConversations();
       setConversations([]);
       setActiveConversation(null);
-      await createNewChat(workspace);
-      setError('');
       setPendingDeleteAll(false);
+      setError('');
+      try {
+        await createNewChat(workspace);
+      } catch (err: unknown) {
+        setError(
+          err instanceof Error
+            ? `History deleted, but could not start a new chat: ${err.message}`
+            : 'History deleted, but could not start a new chat.'
+        );
+      }
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Could not delete history');
+      const message = err instanceof Error ? err.message : 'Could not delete history';
+      setDeleteAllError(message);
+      setError(message);
     } finally {
       setDeleting(false);
     }
@@ -323,9 +348,17 @@ export default function Workspace({ user, onLogout, onUserUpdate }: Props) {
             <>
               <div className="brand-title">
                 Almahy AI
-                <span className="brand-version">v1.7.2</span>
+                <span className="brand-version">v1.7.8</span>
               </div>
               <div className="top-bar-status">
+                {serverNeedsUpdate && (
+                  <span
+                    className="status-pill offline"
+                    title="Cloud server is on an old version — only Gemini runs until AWS is updated"
+                  >
+                    ⚠ Server update needed
+                  </span>
+                )}
                 {engines?.allConnected && (
                   <span className="status-pill neural" title="Gemini + ChatGPT + Copilot merge every answer">
                     ◆ Neural Merge
@@ -355,6 +388,15 @@ export default function Workspace({ user, onLogout, onUserUpdate }: Props) {
             </button>
           </div>
         </header>
+
+        {serverNeedsUpdate && view === 'chat' && (
+          <div className="workspace-error server-update-banner">
+            Triple-engine merge (ChatGPT + Gemini + Copilot) is not active on the cloud server yet.
+            Your PC keys in backend/.env are not used — update AWS: git pull, npm run build, pm2 restart,
+            then add all 3 API keys in Engine Settings.
+            <button type="button" onClick={() => setView('settings')}>Open Settings</button>
+          </div>
+        )}
 
         {error && (
           <div className="workspace-error">
@@ -430,8 +472,14 @@ export default function Workspace({ user, onLogout, onUserUpdate }: Props) {
         confirmLabel="Delete all"
         danger
         loading={deleting}
+        error={deleteAllError}
         onConfirm={confirmDeleteAllHistory}
-        onCancel={() => !deleting && setPendingDeleteAll(false)}
+        onCancel={() => {
+          if (!deleting) {
+            setPendingDeleteAll(false);
+            setDeleteAllError('');
+          }
+        }}
       />
     </div>
   );

@@ -1641,6 +1641,33 @@ input, textarea, select {
   filter: brightness(1.05);
 }
 
+.chat-doc-download-btn.excel-primary {
+  background: linear-gradient(135deg, #10a37f 0%, #0d8a6a 100%);
+  box-shadow: 0 4px 14px rgba(16, 163, 127, 0.35);
+}
+
+.chat-excel-download-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 12px;
+  padding: 10px 16px;
+  border-radius: 10px;
+  border: none;
+  cursor: pointer;
+  background: linear-gradient(135deg, #10a37f 0%, #0d8a6a 100%);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: 0 4px 14px rgba(16, 163, 127, 0.35);
+  transition: filter 0.15s, transform 0.15s;
+}
+
+.chat-excel-download-primary:hover {
+  filter: brightness(1.06);
+  transform: translateY(-1px);
+}
+
 .composer-doc-icon,
 .chat-doc-icon {
   display: flex;
@@ -1822,6 +1849,21 @@ input, textarea, select {
   font-size: 12px;
   color: var(--text-muted);
   line-height: 1.4;
+}
+
+.workspace-error.server-update-banner {
+  background: rgba(245, 158, 11, 0.12);
+  border-color: rgba(245, 158, 11, 0.45);
+  color: #fcd34d;
+  flex-wrap: wrap;
+}
+
+.workspace-error.server-update-banner button {
+  font-size: 13px;
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(245, 158, 11, 0.5);
+  white-space: nowrap;
 }
 
 .workspace-error {
@@ -2710,6 +2752,17 @@ input, textarea, select {
   color: var(--text-secondary);
 }
 
+.almahy-modal-error {
+  margin: -12px 0 16px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: #fca5a5;
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+}
+
 .almahy-modal-actions {
   display: flex;
   justify-content: flex-end;
@@ -2722,6 +2775,7 @@ input, textarea, select {
   font-size: 14px;
   font-weight: 600;
   border: 1px solid var(--border);
+  cursor: pointer;
   transition: background 0.15s, border-color 0.15s, color 0.15s;
 }
 

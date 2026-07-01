@@ -1,7 +1,6 @@
 import { chatGitHubCopilotWorker } from './github-copilot';
 import { synthesizeAsAlmahy } from './almahy-orchestrator';
 import {
-  WORKER_MAX_TOKENS,
   buildLeanWorkerQuestion,
   buildWorkerSystem,
 } from './engine-prompts';
@@ -43,7 +42,8 @@ export async function chatWithMergedEngines(
     chatGemini: (question: string) => Promise<string>;
     chatOpenAI: (question: string) => Promise<string>;
   },
-  hasImageMedia: boolean
+  hasImageMedia: boolean,
+  workerMaxTokens: number
 ): Promise<string> {
   const fileExtract =
     history.length > 0 && history[history.length - 1]?.role === 'user'
@@ -74,7 +74,7 @@ export async function chatWithMergedEngines(
 
   if (keys.githubKey && !hasImageMedia) {
     tasks.push(
-      chatGitHubCopilotWorker(keys.githubKey, leanQuestion, workerSystem, WORKER_MAX_TOKENS)
+      chatGitHubCopilotWorker(keys.githubKey, leanQuestion, workerSystem, workerMaxTokens)
         .then((content) => ({ engine: 'copilot', content }))
         .catch(() => null)
     );

@@ -359,6 +359,20 @@ export async function getWorkspaces(userId: string): Promise<Workspace[]> {
   }));
 }
 
+export async function getWorkspaceForUser(
+  workspaceId: string,
+  userId: string
+): Promise<Workspace | null> {
+  const row = await workspaces().findOne({ _id: workspaceId, userId });
+  if (!row) return null;
+  return {
+    id: row._id,
+    userId: row.userId as string,
+    name: row.name as string,
+    createdAt: row.createdAt as string,
+  };
+}
+
 export async function createWorkspace(userId: string, name: string): Promise<Workspace> {
   const id = uuidv4();
   const now = new Date().toISOString();

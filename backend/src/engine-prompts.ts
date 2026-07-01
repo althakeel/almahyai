@@ -1,26 +1,35 @@
 export type ChatMode = 'general' | 'research' | 'code' | 'creative';
 
-export const WORKER_MAX_TOKENS = 900;
-export const SYNTHESIS_MAX_TOKENS = 1200;
-export const SINGLE_ENGINE_MAX_TOKENS = 1400;
+export const WORKER_MAX_TOKENS = 1400;
+export const WORKER_MERGE_MAX_TOKENS = 1600;
+export const SYNTHESIS_MAX_TOKENS = 2000;
+export const SINGLE_ENGINE_MAX_TOKENS = 1800;
 
 export const WORKER_SYSTEM =
-  'Answer accurately and concisely. Plain language. No filler. If unsure, say so.';
+  'Give a complete, accurate answer. Cover every part of the question. Plain language, well structured. ' +
+  'For addresses, phone numbers, and links: use ONLY verified facts or web search results provided — never guess. ' +
+  'If unsure, say so — do not invent locations or URLs.';
 
-export const ALMAHY_SYNTHESIS_SYSTEM = `You are Almahy AI — one assistant from Al Thakeel.
-Merge the expert notes into ONE clear, warm answer.
-Keep facts multiple notes agree on; drop contradictions.
-Never mention ChatGPT, Gemini, Copilot, OpenAI, Google, GitHub, drafts, or multiple engines.`;
+export const ALMAHY_SYNTHESIS_SYSTEM = `You are Almahy AI — one assistant from Al Thakeel, developed and trained by Rohith.
+You received expert notes from parallel analysis. Write ONE final answer for the user.
+Rules:
+- Complete and proper: answer the full question; do not skip parts.
+- Accuracy first: keep facts that multiple notes agree on; drop clear contradictions. Never invent addresses, phone numbers, or map links.
+- Well formatted: short paragraphs, bullets, or steps when helpful.
+- Warm, clear, professional — speak only as Almahy AI.
+- Never mention ChatGPT, Gemini, Copilot, OpenAI, Google, GitHub, drafts, engines, or third-party AI brands.
+- Whoever asks — same quality: helpful, respectful, complete.`;
 
 export const OPENAI_WORKER_MODEL = 'gpt-4o-mini';
+export const OPENAI_SYNTHESIS_MODEL = 'gpt-4o-mini';
 export const GEMINI_WORKER_MODEL = 'gemini-2.5-flash';
 export const GEMINI_SYNTHESIS_MODEL = 'gemini-2.5-flash';
 
 const MODE_WORKER_HINT: Record<ChatMode, string> = {
-  general: '',
-  research: 'Use web results when provided. Cite sources briefly.',
-  code: 'Prefer short, copy-paste-ready code with one-line summary first.',
-  creative: 'Be imaginative but stay concise.',
+  general: 'Be thorough and helpful.',
+  research: 'Use web results when provided. Cite sources. Include key takeaways.',
+  code: 'Working copy-paste code first, then brief how-to steps.',
+  creative: 'Imaginative but complete — natural human voice.',
 };
 
 export function pickWorkerModel(mode?: ChatMode): {
@@ -37,13 +46,13 @@ export function pickWorkerModel(mode?: ChatMode): {
 export function buildSynthesisModeHint(mode?: ChatMode): string {
   switch (mode ?? 'general') {
     case 'research':
-      return 'Learn mode: clear explanation, headings, bullet points.';
+      return 'Learn mode: full clear explanation, headings, bullet points, key takeaways.';
     case 'code':
-      return 'Build mode: working code, brief how-to steps.';
+      return 'Build mode: complete working code, then brief usage steps.';
     case 'creative':
-      return 'Create mode: warm, human, organic voice.';
+      return 'Create mode: warm, human, organic voice — complete the request.';
     default:
-      return 'General: clear, helpful, easy to scan.';
+      return 'General: clear, complete, helpful — easy to scan.';
   }
 }
 
@@ -133,8 +142,8 @@ export function buildSynthesisUserPrompt(
       : '';
 
   const bundle = drafts
-    .map((d, i) => `--- Note ${i + 1} ---\n${d.content.slice(0, 4500)}`)
+    .map((d, i) => `--- Expert ${i + 1} ---\n${d.content.slice(0, 5500)}`)
     .join('\n\n');
 
-  return `${splitNote}${modeHint ? `${modeHint}\n\n` : ''}User question:\n${userQuestion}\n\n${bundle}`;
+  return `${splitNote}${modeHint ? `${modeHint}\n` : ''}Merge into ONE proper answer for the user. Do not leave any part unanswered.\n\nUser question:\n${userQuestion}\n\n${bundle}`;
 }

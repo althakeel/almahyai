@@ -11,6 +11,7 @@ import {
   getPlatformApiKeysStatus,
   getWorkspaces,
   createWorkspace,
+  getWorkspaceForUser,
   getConversations,
   createConversation,
   updateConversationTitle,
@@ -240,7 +241,13 @@ app.delete('/api/conversations/:id/messages', requireAuth, async (req, res) => {
 });
 
 app.delete('/api/workspaces/:id/conversations', requireAuth, async (req, res) => {
-  await deleteAllConversations(routeParam(req.params.id));
+  const workspaceId = routeParam(req.params.id);
+  const workspace = await getWorkspaceForUser(workspaceId, req.authUser!.uid);
+  if (!workspace) {
+    res.status(404).json({ error: 'Workspace not found' });
+    return;
+  }
+  await deleteAllConversations(workspaceId);
   res.json({ success: true });
 });
 

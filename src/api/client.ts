@@ -11,17 +11,20 @@ async function getToken(): Promise<string> {
   return user.getIdToken();
 }
 
-async function parseJsonResponse<T>(response: Response): Promise<T> {
+async function parseJsonResponse<T>(response: Response, kind: 'api' | 'public' = 'api'): Promise<T> {
   const text = await response.text();
   try {
     return JSON.parse(text) as T;
   } catch {
     if (text.trimStart().startsWith('<!DOCTYPE') || text.trimStart().startsWith('<html')) {
-      throw new Error(
-        response.status === 404
-          ? 'Guest chat is not enabled on the server yet. Sign in for full access, or ask the admin to update the cloud server.'
-          : 'Server returned an error page instead of data. Try again or sign in.'
-      );
+      if (response.status === 404) {
+        throw new Error(
+          kind === 'public'
+            ? 'Guest chat is not enabled on the server yet. Sign in for full access, or ask the admin to update the cloud server.'
+            : 'Server is missing this feature. Ask the admin to update AWS: git pull, npm run build, pm2 restart.'
+        );
+      }
+      throw new Error('Server returned an error page. Check that AWS is online and updated.');
     }
     throw new Error('Invalid response from server. Try again or sign in.');
   }
@@ -38,7 +41,7 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
     },
   });
 
-  const data = await parseJsonResponse<T & { error?: string }>(response);
+  const data = await parseJsonResponse<T & { error?: string }>(response, 'api');
 
   if (!response.ok) {
     throw new Error(data.error ?? `Request failed (${response.status})`);
@@ -56,7 +59,7 @@ async function publicFetch<T>(path: string, options: RequestInit = {}): Promise<
     },
   });
 
-  const data = await parseJsonResponse<T & { error?: string }>(response);
+  const data = await parseJsonResponse<T & { error?: string }>(response, 'public');
 
   if (!response.ok) {
     throw new Error(data.error ?? `Request failed (${response.status})`);

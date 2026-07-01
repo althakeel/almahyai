@@ -180,3 +180,18 @@ export function conversionSuccessMessage(
           : 'file';
   return `I've converted "${sourceFilename}" to ${label}. Click Download ${label} below to save it.`;
 }
+
+export function buildPdfAttachmentFromText(content: string, baseName: string): MessageAttachment {
+  const plain = content
+    .replace(/\*\*/g, '')
+    .replace(/^#+\s+/gm, '')
+    .trim();
+  const data = Buffer.from(plain || 'Document', 'utf8').toString('base64');
+  const safe = baseName.replace(/[^\w\s-]/g, '').trim().slice(0, 40) || 'Almahy-Document';
+  const result = convertTextToPdf(data, `${safe}.txt`);
+  return {
+    mimeType: result.mimeType,
+    data: result.fileBase64,
+    filename: `${safe}.pdf`,
+  };
+}

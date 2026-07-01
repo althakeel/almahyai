@@ -18,10 +18,11 @@ import {
   exportMessagesToPdf,
   exportMessagesToExcel,
   exportMessageToPdf,
-  exportMessageToExcel,
   exportTextToPdf,
   exportTextToExcel,
-  downloadAttachment,
+  downloadMessageAsExcel,
+  hasMarkdownTable,
+  isExcelAttachment,
 } from '../utils/export';
 import {
   IconDownload,
@@ -68,6 +69,12 @@ function documentLabel(attachment: MessageAttachment): string {
   if (attachment.mimeType === 'text/csv' || attachment.mimeType === 'application/csv') return 'CSV';
   if (attachment.mimeType === 'text/plain') return 'Text';
   return 'File';
+}
+
+function isSpreadsheetMessage(msg: Message): boolean {
+  if (msg.role !== 'assistant' || !msg.content?.trim()) return false;
+  if (msg.attachment && isExcelAttachment(msg.attachment)) return true;
+  return hasMarkdownTable(msg.content);
 }
 
 function documentIcon(attachment: MessageAttachment, size = 18) {
@@ -195,12 +202,15 @@ const MessageRow = memo(function MessageRow({
                   </button>
                   <button
                     type="button"
-                    className="message-action-btn icon-action icon-only"
+                    className={`message-action-btn icon-action${isSpreadsheetMessage(msg) ? '' : ' icon-only'}`}
                     onClick={() => onExportExcel(msg)}
-                    title="Save as Excel"
-                    aria-label="Save as Excel"
+                    title="Download as Excel"
+                    aria-label="Download as Excel"
                   >
                     <IconExcel size={14} />
+                    {isSpreadsheetMessage(msg) ? (
+                      <span>{copied === `${msg.id}-excel` ? 'Downloaded' : 'Download Excel'}</span>
+                    ) : null}
                   </button>
                 </>
               )}
@@ -226,17 +236,26 @@ const MessageRow = memo(function MessageRow({
               <span className="chat-doc-type">{documentLabel(msg.attachment)}</span>
               <span className="chat-doc-name">{msg.attachment.filename}</span>
             </span>
-            {msg.attachment.data && (
+            {msg.attachment.data ? (
               <button
                 type="button"
-                className="chat-doc-download-btn"
-                onClick={() => downloadAttachment(msg.attachment!)}
+                className={`chat-doc-download-btn${isExcelAttachment(msg.attachment) ? ' excel-primary' : ''}`}
+                onClick={() => onExportExcel(msg)}
               >
                 <IconDownload size={14} />
-                <span>Download {documentLabel(msg.attachment)}</span>
+                <span>
+                  {isExcelAttachment(msg.attachment) ? 'Download as Excel' : `Download ${documentLabel(msg.attachment)}`}
+                </span>
               </button>
-            )}
+            ) : null}
           </div>
+        )}
+        {isSpreadsheetMessage(msg) && !msg.attachment?.data && (
+          <button type="button" className="chat-excel-download-primary" onClick={() => onExportExcel(msg)}>
+            <IconExcel size={16} />
+            <IconDownload size={16} />
+            <span>{copied === `${msg.id}-excel` ? 'Excel downloaded' : 'Download as Excel'}</span>
+          </button>
         )}
         {msg.image && (
           <div className="chat-image-wrap">
@@ -928,9 +947,12 @@ export default function ChatPanel({
   );
 
   const handleExportMsgExcel = useCallback(
-    (msg: Message) => {
+    async (msg: Message) => {
       try {
-        exportMessageToExcel(msg, `${exportTitle}-message`);
+        const title =
+          msg.attachment?.filename?.replace(/\.xlsx?$/i, '') ||
+          `${exportTitle}-spreadsheet`;
+        await downloadMessageAsExcel(msg, title);
         flashCopied(`${msg.id}-excel`);
       } catch {
         alert('Could not create Excel file.');

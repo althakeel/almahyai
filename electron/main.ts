@@ -1,4 +1,4 @@
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, shell } from 'electron';
 import path from 'path';
 import http from 'http';
 import { startStaticServer } from './static-server';
@@ -42,20 +42,28 @@ async function createWindow(): Promise<void> {
     mainWindow?.show();
   });
 
-  mainWindow.webContents.setWindowOpenHandler(() => ({
-    action: 'allow',
-    overrideBrowserWindowOptions: {
-      width: 520,
-      height: 720,
-      autoHideMenuBar: true,
-      webPreferences: {
-        contextIsolation: true,
-        nodeIntegration: false,
-        sandbox: true,
-        partition: 'persist:orion',
-      },
-    },
-  }));
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      void shell.openExternal(url);
+    }
+    return { action: 'deny' };
+  });
+
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    try {
+      const parsed = new URL(url);
+      const isLocal =
+        parsed.hostname === 'localhost' ||
+        parsed.hostname === '127.0.0.1' ||
+        parsed.hostname === '[::1]';
+      if (!isLocal) {
+        event.preventDefault();
+        void shell.openExternal(url);
+      }
+    } catch {
+      event.preventDefault();
+    }
+  });
 
   const isDev = !app.isPackaged;
   if (isDev) {

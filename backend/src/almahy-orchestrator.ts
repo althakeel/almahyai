@@ -3,7 +3,7 @@ import { GoogleGenAI } from '@google/genai';
 import {
   ALMAHY_SYNTHESIS_SYSTEM,
   GEMINI_SYNTHESIS_MODEL,
-  OPENAI_WORKER_MODEL,
+  OPENAI_SYNTHESIS_MODEL,
   SYNTHESIS_MAX_TOKENS,
   buildSynthesisUserPrompt,
   splitUserRequest,
@@ -27,9 +27,6 @@ export async function synthesizeAsAlmahy(
   if (drafts.length === 0) {
     throw new Error('All AI engines failed. Check API keys in Engine Settings.');
   }
-  if (drafts.length === 1) {
-    return drafts[0].content;
-  }
 
   const prompt = buildSynthesisUserPrompt(userQuestion, modeHint, drafts);
 
@@ -42,6 +39,7 @@ export async function synthesizeAsAlmahy(
         config: {
           systemInstruction: ALMAHY_SYNTHESIS_SYSTEM,
           maxOutputTokens: SYNTHESIS_MAX_TOKENS,
+          temperature: 0.35,
         },
       });
       const text = response.text?.trim();
@@ -54,8 +52,8 @@ export async function synthesizeAsAlmahy(
   if (keys.openaiKey) {
     const client = new OpenAI({ apiKey: keys.openaiKey });
     const response = await client.chat.completions.create({
-      model: OPENAI_WORKER_MODEL,
-      temperature: 0.4,
+      model: OPENAI_SYNTHESIS_MODEL,
+      temperature: 0.35,
       max_tokens: SYNTHESIS_MAX_TOKENS,
       messages: [
         { role: 'system', content: ALMAHY_SYNTHESIS_SYSTEM },
@@ -66,9 +64,9 @@ export async function synthesizeAsAlmahy(
     if (text) return text;
   }
 
-  return pickLongestDraft(drafts);
+  return pickBestDraft(drafts);
 }
 
-function pickLongestDraft(drafts: EngineDraft[]): string {
+function pickBestDraft(drafts: EngineDraft[]): string {
   return drafts.reduce((best, cur) => (cur.content.length > best.content.length ? cur : best)).content;
 }

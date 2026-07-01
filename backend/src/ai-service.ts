@@ -3,7 +3,8 @@ import { GoogleGenAI } from '@google/genai';
 import { getPlatformApiKeys, getMessages, addMessage, type MessageImage, type MessageAttachment } from './database';
 import { DEFAULT_CHAT_PROVIDER, DEFAULT_CHAT_MODEL } from './config';
 import { prepareAttachment, isPdfMime, isExcelMime, attachmentForStorage } from './file-content';
-import { detectFileConversion, runFileConversion, conversionSuccessMessage } from './file-conversions';
+import { detectFileConversion, runFileConversion, conversionSuccessMessage, buildPdfAttachmentFromText } from './file-conversions';
+import { wantsExcelOutput, wantsPdfDocumentOutput, buildExcelAttachment, contentHasMarkdownTable } from './text-to-excel';
 import { getPublicLegalSummary, getSupportedConversionsText } from './legal-info';
 import {
   enhanceImagePrompt,
@@ -22,6 +23,7 @@ import {
   pickWorkerModel,
   SINGLE_ENGINE_MAX_TOKENS,
   WORKER_MAX_TOKENS,
+  WORKER_MERGE_MAX_TOKENS,
   ALMAHY_SYNTHESIS_SYSTEM,
   type ChatMode,
 } from './engine-prompts';
@@ -31,7 +33,14 @@ import {
   appendSourceLinks,
   researchFormatHint,
   shouldUseWebSearch,
+  isFactualLookupQuery,
+  isExternalBusinessLookup,
 } from './web-search';
+import {
+  enforceVerifiedFacts,
+  getVerifiedKnowledgeContext,
+  isLinkFollowUp,
+} from './factual-knowledge';
 
 export interface ChatRequest {
   userId: string;
@@ -156,10 +165,19 @@ function sanitizeAlmahyIdentity(text: string): string {
       'Almahy AI',
     ],
     [/\bI am a large language model\b/gi, "I'm Almahy AI"],
+    [/\bI am the AI,?\s*the large language model\b/gi, "I'm Almahy AI"],
     [/\bI am a large language model,?\s*and I am powered by\b/gi, "I'm Almahy AI — your assistant from Al Thakeel"],
     [
-      /\bdeveloped and trained by Google\b/gi,
-      'built by Al Thakeel as Almahy AI',
+      /\b(?:developed and )?trained by Google\b/gi,
+      `developed and trained by ${INTERNAL_CONTACT_NAME} for Al Thakeel`,
+    ],
+    [
+      /\blarge language model trained by Google\b/gi,
+      `AI assistant trained by ${INTERNAL_CONTACT_NAME}`,
+    ],
+    [
+      /\btrained by Google,?\s*trained by Rohith\b/gi,
+      `trained by ${INTERNAL_CONTACT_NAME} for Al Thakeel`,
     ],
     [/\bpowered by (?:the )?Google'?s? Gemini(?: family of models)?\b/gi, 'built by Al Thakeel as Almahy AI'],
     [/\bGemini family of models\b/gi, 'Almahy AI'],
@@ -197,8 +215,26 @@ function sanitizeOrganicVoice(text: string): string {
   return out.trim();
 }
 
-function polishResponse(text: string, fallbackConnectionAnswer?: string, fileContext?: string): string {
+function responseRefusesFileOutput(text: string): boolean {
+  return (
+    /\b(can't|cannot|unable to|don't have the ability to|i'm unable to)\b[\s\S]{0,120}\b(create|generate|make|send|provide|give you|export|attach|download)\b[\s\S]{0,80}\b(excel|spreadsheet|xlsx|pdf|file|document)\b/i.test(
+      text
+    ) ||
+    (/\bthis (?:text-based )?(?:interface|chat|conversation|platform)\b/i.test(text) &&
+      /\b(excel|spreadsheet|file|pdf|attach)\b/i.test(text))
+  );
+}
+
+function polishResponse(
+  text: string,
+  fallbackConnectionAnswer?: string,
+  fileContext?: string,
+  factualContext?: { message: string; recentHistory?: string }
+): string {
   let out = sanitizeOrganicVoice(sanitizeAlmahyIdentity(text));
+  if (factualContext) {
+    out = enforceVerifiedFacts(factualContext.message, out, factualContext.recentHistory ?? '');
+  }
   if (fileContext && responseRefusesFileAccess(out)) {
     return (
       'I read your uploaded file. Here is what I found:\n\n' +
@@ -208,6 +244,17 @@ function polishResponse(text: string, fallbackConnectionAnswer?: string, fileCon
   }
   if (responseLeaksVendorIdentity(out)) {
     return fallbackConnectionAnswer ?? getConnectionAnswer('');
+  }
+  if (responseRefusesFileOutput(out)) {
+    out = out
+      .replace(/\bI can't directly create[\s\S]*?(?=\n\n|$)/gi, '')
+      .replace(/\bI cannot directly create[\s\S]*?(?=\n\n|$)/gi, '')
+      .replace(/\bthis text-based interface\b/gi, 'Almahy AI')
+      .trim();
+    if (!/\|.+\|/.test(out) && out.length < 80) {
+      out =
+        "I'll build that for you as a table in this reply — use the **New Excel** button below the chat to download the .xlsx file, or I'll attach it automatically when ready.";
+    }
   }
   return out;
 }
@@ -414,10 +461,29 @@ function isConnectionQuestion(message: string): boolean {
   }
   if (/\bwhat (?:ai|model) are you\b/.test(text)) return true;
   if (/\bwho are you\b/.test(text) || /\bwhat are you\b/.test(text)) return true;
+  if (/\bwho trained you\b/.test(text)) return true;
+  if (/\bwho (?:made|built|created|developed) you\b/.test(text)) return true;
   return false;
 }
 
-function getConnectionAnswer(_message: string): string {
+function getConnectionAnswer(message: string): string {
+  const text = message.trim().toLowerCase();
+  if (
+    /\b(who (?:made|built|created|developed|trained)|who is your (?:creator|developer|trainer)|who trained you)\b/.test(
+      text
+    )
+  ) {
+    return (
+      `I'm Almahy AI — developed and trained by ${INTERNAL_CONTACT_NAME} for Al Thakeel. ` +
+      'I help with chat, learning, building, and creating. What would you like to do today?'
+    );
+  }
+  if (/\bwho are you\b|\bwhat are you\b|\bwhat is your name\b/.test(text)) {
+    return (
+      `I'm Almahy AI — an AI assistant from Al Thakeel, developed and trained by ${INTERNAL_CONTACT_NAME}. ` +
+      'I help with chat, learning, building, and creating. What would you like to do today?'
+    );
+  }
   return (
     "I'm Almahy AI — your all-in-one assistant from Al Thakeel. " +
     'I help with chat, learning, building, and creating. What would you like to do today?'
@@ -436,6 +502,7 @@ function responseLeaksVendorIdentity(text: string): boolean {
     /\b(?:no,?\s*)?i am not connected\b/i.test(text) ||
     /\b(?:chatgpt|gemini|openai|google ai|gpt-\d|claude|anthropic|bard|copilot)\b/i.test(text) ||
     /\b(?:large language model|llm)\b.*\b(?:google|gemini|openai|chatgpt)\b/i.test(text) ||
+    /\btrained by Google\b/i.test(text) ||
     /\b(?:powered|developed|trained|made|connected|uses?) (?:by|with|to|on)\b.*\b(?:google|openai|gemini|chatgpt|anthropic|claude)\b/i.test(
       text
     ) ||
@@ -447,7 +514,9 @@ function responseLeaksVendorIdentity(text: string): boolean {
 }
 
 function isAboutUsQuestion(message: string): boolean {
+  if (isExternalBusinessLookup(message)) return false;
   const text = message.trim().toLowerCase();
+  if (/\bwhat is almahy\b/.test(text) && /\b(legal|location|address|law)\b/.test(text)) return false;
   return (
     /\b(about us|about you|about almahy|about al thakeel|about althakeel|who made you|who built you|who created you|who developed|your developers?|your team|how (?:were you|was almahy|was this) built|how do you work internally|what technology|tech stack|source code|api key|backend|server|architecture|infrastructure|secret|contact|who (?:is|runs|owns)|rohith)\b/.test(
       text
@@ -481,6 +550,16 @@ function connectionQuestionHint(): string {
   return (
     ' IMPORTANT: Answer only as Almahy AI from Al Thakeel. Do NOT name ChatGPT, Gemini, OpenAI, Google, Claude, or any external AI brand. ' +
     'Do NOT say whether any specific AI is connected, powered, or used. Stay positive and offer to help.'
+  );
+}
+
+function factualLookupHint(): string {
+  return (
+    ' IMPORTANT: Factual lookup — answer ONLY from live web search results above. ' +
+    'Never invent addresses, cities, or phone numbers. ' +
+    'Use full https:// URLs from search results only — never invent goo.gl or maps.app.goo.gl short links. ' +
+    'Almahy Legal Services is a UAE law firm (almahy.com) in Dubai — NOT the Almahy AI chat app. ' +
+    'Include markdown links and ## Sources.'
   );
 }
 
@@ -526,16 +605,41 @@ function fileAttachmentHint(attachmentMime?: string): string {
 
 function excelCreationHint(): string {
   return (
-    ' If the user wants a spreadsheet or table, output clean markdown table(s) with a header row (| Column | ... |). ' +
-    'They can download your reply as an Excel file using the New Excel button.'
+    ' ALMAHY EXCEL (mandatory): You CAN create Excel in this app. Output complete markdown table(s) ' +
+    'with | Header | columns | and every data row. User downloads via "New Excel" or automatic file attachment. ' +
+    'NEVER say you cannot create, send, or attach Excel in this chat. NEVER cite "text-based interface" as a limit.'
   );
 }
 
 function pdfCreationHint(): string {
   return (
-    ' If the user wants a new PDF document, write complete polished content with a title (# Title) and sections (## Heading). ' +
-    'They can download your reply as a PDF using the New PDF button.'
+    ' ALMAHY PDF (mandatory): You CAN create PDF in this app. Output # Title and ## sections with full content. ' +
+    'User downloads via "New PDF" or automatic file attachment. ' +
+    'NEVER say you cannot create or send PDF/files in this chat.'
   );
+}
+
+function almahyFileOutputHint(message: string): string {
+  if (wantsExcelOutput(message)) return excelCreationHint();
+  if (wantsPdfDocumentOutput(message)) return pdfCreationHint();
+  if (/\b(excel|spreadsheet|xlsx|worksheet)\b/i.test(message)) return excelCreationHint();
+  if (/\b(pdf|document|report)\b/i.test(message)) return pdfCreationHint();
+  return '';
+}
+
+function outputBaseName(message: string): string {
+  const words = message
+    .replace(/[^\w\s]/g, ' ')
+    .trim()
+    .split(/\s+/)
+    .filter((w) => w.length > 2 && !/^(create|make|generate|excel|pdf|file|please|need)$/i.test(w))
+    .slice(0, 4)
+    .join('-');
+  return words || 'Almahy-File';
+}
+
+function fileReadySuffix(label: 'Excel' | 'PDF'): string {
+  return `\n\nYour ${label} file is ready — click **Download ${label}** below.`;
 }
 
 function buildWorkerExtras(
@@ -553,6 +657,11 @@ function buildWorkerExtras(
   if (isConfidentialQuestion(message)) {
     extra += ` Say internal details are confidential; contact ${INTERNAL_CONTACT_NAME} only.`;
   }
+  extra += almahyFileOutputHint(message);
+  if (isFactualLookupQuery(message) || isExternalBusinessLookup(message)) {
+    extra += factualLookupHint();
+  }
+  extra += ' Give a complete, proper answer — cover every part of the question.';
   return extra;
 }
 
@@ -566,9 +675,9 @@ function buildSynthesisExtras(
   let extra = buildSynthesisModeHint(mode);
   if (webResultCount > 0) extra += researchFormatHint();
   if (hasFileAttachment) extra += fileAttachmentHint(attachmentMime);
-  else if (/\b(pdf|document|report|letter|proposal)\b/i.test(message)) extra += pdfCreationHint();
-  else if (/\b(excel|spreadsheet|xlsx|xls|csv|worksheet|workbook)\b/i.test(message)) {
-    extra += excelCreationHint();
+  extra += almahyFileOutputHint(message);
+  if (isFactualLookupQuery(message) || isExternalBusinessLookup(message)) {
+    extra += factualLookupHint();
   }
   if (isAboutUsQuestion(message)) extra += aboutUsQuestionHint();
   return extra;
@@ -650,15 +759,26 @@ export async function sendChatMessage(req: ChatRequest): Promise<ChatResponse> {
 
   let responseContent: string;
   const skipSearch = isImageGenerationRequest(req.message, history) || hasUpload;
+  const recentHistoryText = history
+    .slice(-4)
+    .map((m) => m.content)
+    .join('\n');
+  const factualLookup =
+    isFactualLookupQuery(userText) ||
+    isExternalBusinessLookup(userText) ||
+    isLinkFollowUp(userText, recentHistoryText);
+  const verifiedKnowledge = getVerifiedKnowledgeContext(userText, recentHistoryText);
   const needsSearch =
-    !skipSearch && (req.mode === 'research' || shouldUseWebSearch(req.message, req.mode));
+    !skipSearch &&
+    (req.mode === 'research' || shouldUseWebSearch(req.message, req.mode) || factualLookup);
   const webResults = needsSearch
-    ? await multiEngineSearch(req.message, req.mode === 'research' ? 8 : 5, {
-        fast: req.mode !== 'research',
+    ? await multiEngineSearch(userText, factualLookup ? 10 : req.mode === 'research' ? 8 : 5, {
+        fast: !factualLookup && req.mode !== 'research',
       })
     : [];
 
-  const searchContext = formatSearchContext(webResults);
+  const searchContext =
+    (verifiedKnowledge ? `${verifiedKnowledge}\n\n` : '') + formatSearchContext(webResults);
   const workerSystem =
     buildWorkerSystem(req.mode) + buildWorkerExtras(userText, hasUpload, attachment?.mimeType);
   const synthesisHint = buildSynthesisExtras(
@@ -669,8 +789,15 @@ export async function sendChatMessage(req: ChatRequest): Promise<ChatResponse> {
     attachment?.mimeType
   );
   const hasImageMedia = !!req.image || history.some((m) => m.image);
-  const enableGeminiSearch = (req.mode === 'research' || webResults.length > 0) && !hasImageMedia;
+  const enableGeminiSearch =
+    (req.mode === 'research' || webResults.length > 0 || factualLookup) && !hasImageMedia;
   const models = pickWorkerModel(req.mode);
+  const fileOutputRequest = wantsExcelOutput(userText) || wantsPdfDocumentOutput(userText);
+  const workerMaxTokens = shouldMergeEngines(keys, hasImageMedia)
+    ? WORKER_MERGE_MAX_TOKENS
+    : fileOutputRequest
+      ? SINGLE_ENGINE_MAX_TOKENS
+      : WORKER_MAX_TOKENS;
   const fileExtract = attachment?.extractedText;
   const leanQuestion = buildLeanWorkerQuestion(userText, history, searchContext, fileExtract);
   const mediaMessage = latestUserMedia(history);
@@ -690,14 +817,15 @@ export async function sendChatMessage(req: ChatRequest): Promise<ChatResponse> {
             models.gemini,
             question,
             workerSystem,
-            WORKER_MAX_TOKENS,
+            workerMaxTokens,
             enableGeminiSearch,
             mediaMessage
           ),
         chatOpenAI: (question) =>
-          chatOpenAILean(keys.openaiKey!, models.openai, question, workerSystem, WORKER_MAX_TOKENS),
+          chatOpenAILean(keys.openaiKey!, models.openai, question, workerSystem, workerMaxTokens),
       },
-      hasImageMedia
+      hasImageMedia,
+      workerMaxTokens
     );
   } else {
     const engine = pickChatEngine(keys, req.mode, !!req.image, !!attachment);
@@ -743,7 +871,10 @@ export async function sendChatMessage(req: ChatRequest): Promise<ChatResponse> {
       ? getConnectionAnswer(req.message)
       : undefined;
   const fileFallback = attachment?.extractedText;
-  responseContent = polishResponse(responseContent, identityFallback, fileFallback);
+  responseContent = polishResponse(responseContent, identityFallback, fileFallback, {
+    message: userText,
+    recentHistory: recentHistoryText,
+  });
 
   if (!hasUpload && (keys.geminiKey || keys.openaiKey) && responseClaimsImage(responseContent)) {
     try {
@@ -757,8 +888,35 @@ export async function sendChatMessage(req: ChatRequest): Promise<ChatResponse> {
     }
   }
 
-  const saved = await addMessage(req.conversationId, 'assistant', responseContent);
-  return { content: responseContent, messageId: saved.id };
+  let outputAttachment: MessageAttachment | null = null;
+  const shouldAttachExcel =
+    !hasUpload && (wantsExcelOutput(userText) || contentHasMarkdownTable(responseContent));
+  if (shouldAttachExcel) {
+    try {
+      outputAttachment = buildExcelAttachment(responseContent, outputBaseName(userText));
+      if (outputAttachment && !/download excel/i.test(responseContent)) {
+        responseContent += fileReadySuffix('Excel');
+      }
+    } catch {
+      // User can still use Download as Excel on the message
+    }
+  } else if (!hasUpload && wantsPdfDocumentOutput(userText)) {
+    try {
+      outputAttachment = buildPdfAttachmentFromText(responseContent, outputBaseName(userText));
+      if (outputAttachment && !/download pdf/i.test(responseContent)) {
+        responseContent += fileReadySuffix('PDF');
+      }
+    } catch {
+      // User can still use New PDF button
+    }
+  }
+
+  const saved = await addMessage(req.conversationId, 'assistant', responseContent, null, outputAttachment);
+  return {
+    content: responseContent,
+    messageId: saved.id,
+    attachment: outputAttachment ?? undefined,
+  };
 }
 
 export interface GuestChatRequest {
@@ -790,16 +948,24 @@ export async function sendGuestChatMessage(req: GuestChatRequest): Promise<strin
     .slice(-4)
     .map((m) => ({ role: m.role, content: m.content }));
 
+  const priorHistoryText = priorHistory.map((m) => m.content).join('\n');
   const skipSearch = isImageGenerationRequest(req.message);
+  const factualLookup =
+    isFactualLookupQuery(req.message) ||
+    isExternalBusinessLookup(req.message) ||
+    isLinkFollowUp(req.message, priorHistoryText);
+  const verifiedKnowledge = getVerifiedKnowledgeContext(req.message, priorHistoryText);
   const needsSearch =
-    !skipSearch && (req.mode === 'research' || shouldUseWebSearch(req.message, req.mode));
+    !skipSearch &&
+    (req.mode === 'research' || shouldUseWebSearch(req.message, req.mode) || factualLookup);
   const webResults = needsSearch
-    ? await multiEngineSearch(req.message, req.mode === 'research' ? 8 : 5, {
-        fast: req.mode !== 'research',
+    ? await multiEngineSearch(req.message, factualLookup ? 10 : req.mode === 'research' ? 8 : 5, {
+        fast: !factualLookup && req.mode !== 'research',
       })
     : [];
 
-  const searchContext = formatSearchContext(webResults);
+  const searchContext =
+    (verifiedKnowledge ? `${verifiedKnowledge}\n\n` : '') + formatSearchContext(webResults);
   const workerSystem =
     buildWorkerSystem(req.mode) +
     buildWorkerExtras(req.message, false) +
@@ -826,13 +992,14 @@ export async function sendGuestChatMessage(req: GuestChatRequest): Promise<strin
             models.gemini,
             question,
             workerSystem,
-            WORKER_MAX_TOKENS,
-            req.mode === 'research' || webResults.length > 0
+            WORKER_MERGE_MAX_TOKENS,
+            req.mode === 'research' || webResults.length > 0 || factualLookup
           ),
         chatOpenAI: (question) =>
-          chatOpenAILean(keys.openaiKey!, models.openai, question, workerSystem, WORKER_MAX_TOKENS),
+          chatOpenAILean(keys.openaiKey!, models.openai, question, workerSystem, WORKER_MERGE_MAX_TOKENS),
       },
-      false
+      false,
+      WORKER_MERGE_MAX_TOKENS
     );
   } else {
     const engine = pickChatEngine(keys, req.mode);
@@ -853,7 +1020,7 @@ export async function sendGuestChatMessage(req: GuestChatRequest): Promise<strin
         leanQuestion,
         singleSystem,
         SINGLE_ENGINE_MAX_TOKENS,
-        req.mode === 'research' || webResults.length > 0
+        req.mode === 'research' || webResults.length > 0 || factualLookup
       );
     }
   }
@@ -868,7 +1035,9 @@ export async function sendGuestChatMessage(req: GuestChatRequest): Promise<strin
       ? getConfidentialAnswer()
       : isConnectionQuestion(req.message)
         ? getConnectionAnswer(req.message)
-        : undefined
+        : undefined,
+    undefined,
+    { message: req.message, recentHistory: priorHistoryText }
   );
 }
 

@@ -246,7 +246,38 @@ export async function exportMessageToPdf(message: Message, title: string): Promi
 }
 
 export function exportMessageToExcel(message: Message, title: string): void {
+  if (message.role === 'assistant' && message.content && hasMarkdownTable(message.content)) {
+    void exportTextToExcel(title, message.content);
+    return;
+  }
   exportMessagesToExcel([message], title);
+}
+
+export function hasMarkdownTable(content: string): boolean {
+  return extractMarkdownTables(content).length > 0;
+}
+
+export function isExcelAttachment(attachment: MessageAttachment): boolean {
+  return (
+    attachment.mimeType.includes('spreadsheet') ||
+    attachment.mimeType === 'application/vnd.ms-excel' ||
+    /\.xlsx?$/i.test(attachment.filename)
+  );
+}
+
+export async function downloadMessageAsExcel(
+  message: Message,
+  title: string
+): Promise<void> {
+  if (message.attachment?.data && isExcelAttachment(message.attachment)) {
+    downloadAttachment(message.attachment);
+    return;
+  }
+  if (message.content?.trim()) {
+    await exportTextToExcel(title, message.content);
+    return;
+  }
+  exportMessageToExcel(message, title);
 }
 
 function parseMarkdownTableRow(line: string): string[] | null {

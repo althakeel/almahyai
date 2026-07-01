@@ -178,12 +178,41 @@ async function searchGoogleCse(query: string): Promise<WebSearchResult[]> {
   }));
 }
 
+export function isExternalBusinessLookup(message: string): boolean {
+  const text = message.trim().toLowerCase();
+  if (/\balmahy\s+legal\b/.test(text)) return true;
+  if (/\balmahy\b/.test(text) && /\b(legal service|legal services|law firm|lawyer|attorney|notary)\b/.test(text)) {
+    return true;
+  }
+  if (
+    /\balmahy\b/.test(text) &&
+    /\b(location|address|office|phone|located|where is|maps?|directions)\b/.test(text) &&
+    !/\balmahy\s+ai\b/.test(text)
+  ) {
+    return true;
+  }
+  return false;
+}
+
+export function isFactualLookupQuery(message: string): boolean {
+  const text = message.trim().toLowerCase();
+  if (isExternalBusinessLookup(message)) return true;
+  return (
+    /\b(where is|where are|location of|address of|office of|phone number|contact number|google maps|show (?:me )?(?:the )?link|official website|website link)\b/.test(
+      text
+    ) ||
+    /\b(what is .+ (?:location|address|phone))\b/.test(text) ||
+    /\b(located|headquarters|branch office|opening hours)\b/.test(text)
+  );
+}
+
 export function shouldUseWebSearch(message: string, mode?: string): boolean {
   const text = message.trim().toLowerCase();
   if (!text) return false;
   if (isImageGenerationRequest(text)) return false;
 
   if (mode === 'research') return true;
+  if (isFactualLookupQuery(message)) return true;
 
   if (
     /^(hi|hello|hey|thanks|thank you|ok|okay|yes|no|bye|yo|good morning|good night|good afternoon|how are you)[!.?\s]*$/i.test(
@@ -216,6 +245,9 @@ function isImageGenerationRequest(text: string): boolean {
 
 export function enhanceSearchQuery(message: string): string {
   const text = message.trim().toLowerCase();
+  if (/\balmahy\s+legal\b/.test(text) || (/\balmahy\b/.test(text) && /\blegal\b/.test(text))) {
+    return 'Almahy Legal Services Dubai UAE address phone site:almahy.com';
+  }
   if (/^althakeel$|^al[\s-]?thakeel$/.test(text)) {
     return 'Al Thakeel UAE holding company retail ecommerce brands';
   }
@@ -268,7 +300,8 @@ export function formatSearchContext(results: WebSearchResult[]): string {
   return (
     'Live web search results:\n\n' +
     lines.join('\n\n') +
-    '\n\nUse these results to answer accurately. Format with headings, bullet lists, and markdown links [title](url). ' +
+    '\n\nUse ONLY these results for facts (address, phone, location, links). Never invent or guess addresses. ' +
+    'If results mention a business, use that exact information. Format with headings, bullet lists, and markdown links [title](url). ' +
     'Cite sources in a ## Sources section at the end. Do not name search engines in your reply.'
   );
 }

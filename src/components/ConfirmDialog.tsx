@@ -6,6 +6,7 @@ interface Props {
   cancelLabel?: string;
   danger?: boolean;
   loading?: boolean;
+  error?: string;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -18,6 +19,7 @@ export default function ConfirmDialog({
   cancelLabel = 'Cancel',
   danger = false,
   loading = false,
+  error,
   onConfirm,
   onCancel,
 }: Props) {
@@ -40,6 +42,7 @@ export default function ConfirmDialog({
           {title}
         </h2>
         <p className="almahy-modal-message">{message}</p>
+        {error ? <p className="almahy-modal-error">{error}</p> : null}
         <div className="almahy-modal-actions">
           <button type="button" className="almahy-modal-btn secondary" onClick={onCancel} disabled={loading}>
             {cancelLabel}

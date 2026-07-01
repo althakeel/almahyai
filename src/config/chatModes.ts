@@ -107,7 +107,8 @@ export const QUICK_PROMPTS: QuickPrompt[] = [
     title: 'Create a spreadsheet',
     icon: '📊',
     mode: 'creative',
-    prompt: 'Create a spreadsheet with columns and sample rows about:',
+    prompt:
+      'Create a complete Excel spreadsheet. Output a full markdown table with headers and all data rows. Almahy will attach the .xlsx for download. Topic:',
   },
   {
     id: 'edit-excel',
