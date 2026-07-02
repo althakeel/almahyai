@@ -4,14 +4,63 @@ import path from 'path';
 import crypto from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 import { getDb, connectMongo } from './mongo';
-import type { Document } from 'mongodb';
 import { isAdminEmail, ADMIN_EMAIL, DEFAULT_CHAT_PROVIDER, DEFAULT_CHAT_MODEL } from './config';
 import { initGuestUsageIndexes } from './guest-usage';
 
 const PLATFORM_CONFIG_ID = 'main';
 
-/** App uses string UUIDs / Firebase UIDs as MongoDB _id — not ObjectId. */
-type StringIdDoc = Document & { _id: string };
+/** MongoDB documents — app uses string UUIDs / Firebase UIDs as _id, not ObjectId. */
+interface UserDoc {
+  _id: string;
+  email: string;
+  displayName: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+interface PlatformConfigDoc {
+  _id: string;
+  openaiKey?: string | null;
+  geminiKey?: string | null;
+  githubKey?: string | null;
+  defaultProvider?: string;
+  defaultModel?: string;
+  updatedAt?: string;
+}
+
+interface ApiKeysDoc {
+  userId: string;
+  openaiKey?: string | null;
+  geminiKey?: string | null;
+  githubKey?: string | null;
+}
+
+interface WorkspaceDoc {
+  _id: string;
+  userId: string;
+  name: string;
+  createdAt: string;
+}
+
+interface ConversationDoc {
+  _id: string;
+  workspaceId: string;
+  title: string;
+  provider: 'openai' | 'gemini';
+  model: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface MessageDoc {
+  _id: string;
+  conversationId: string;
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  image?: MessageImage;
+  attachment?: MessageAttachment;
+  createdAt: string;
+}
 
 const ENCRYPTION_ALGO = 'aes-256-gcm';
 const DATA_DIR = path.join(__dirname, '../data');
@@ -70,7 +119,7 @@ export interface ApiKeys {
 }
 
 function platformConfig() {
-  return getDb().collection<StringIdDoc>('platform_config');
+  return getDb().collection<PlatformConfigDoc>('platform_config');
 }
 
 function mapUser(row: {
@@ -89,23 +138,23 @@ function mapUser(row: {
 }
 
 function users() {
-  return getDb().collection<StringIdDoc>('users');
+  return getDb().collection<UserDoc>('users');
 }
 
 function apiKeys() {
-  return getDb().collection('api_keys');
+  return getDb().collection<ApiKeysDoc>('api_keys');
 }
 
 function workspaces() {
-  return getDb().collection<StringIdDoc>('workspaces');
+  return getDb().collection<WorkspaceDoc>('workspaces');
 }
 
 function conversations() {
-  return getDb().collection<StringIdDoc>('conversations');
+  return getDb().collection<ConversationDoc>('conversations');
 }
 
 function messages() {
-  return getDb().collection<StringIdDoc>('messages');
+  return getDb().collection<MessageDoc>('messages');
 }
 
 function getEncryptionKey(): Buffer {
@@ -476,14 +525,7 @@ export async function addMessage(
 ): Promise<Message> {
   const id = uuidv4();
   const now = new Date().toISOString();
-  const doc: StringIdDoc & {
-    conversationId: string;
-    role: string;
-    content: string;
-    createdAt: string;
-    image?: MessageImage;
-    attachment?: MessageAttachment;
-  } = { _id: id, conversationId, role, content, createdAt: now };
+  const doc: MessageDoc = { _id: id, conversationId, role, content, createdAt: now };
   if (image) doc.image = image;
   if (attachment) doc.attachment = attachment;
   await messages().insertOne(doc);
